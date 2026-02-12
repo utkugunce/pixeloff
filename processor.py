@@ -1,4 +1,3 @@
-from rembg import remove
 from PIL import Image
 import os
 
@@ -7,6 +6,12 @@ def remove_background(input_path, output_path=None):
     Removes the background from the image at input_path.
     Saves the result to output_path.
     """
+    # Lazy import to prevent app startup lag/timeout
+    try:
+        from rembg import remove
+    except ImportError:
+        print("Error: rembg not installed.")
+        return None
     if output_path is None:
         file_name = os.path.basename(input_path)
         name, ext = os.path.splitext(file_name)
