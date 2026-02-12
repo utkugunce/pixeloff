@@ -63,11 +63,11 @@ if image_path:
         
     with col2:
         st.subheader("No Background")
-        with st.spinner("Removing background..."):
-            processed_path = remove_background(image_path)
+        with st.spinner("Removing background... (using lightweight model)"):
+            processed_path, error = remove_background(image_path)
             
         if processed_path:
-            st.image(processed_path, use_column_width=True)
+            st.image(processed_path, caption="Background Removed", use_column_width=True)
             
             with open(processed_path, "rb") as file:
                 st.download_button(
@@ -78,4 +78,4 @@ if image_path:
                     type="primary"
                 )
         else:
-            st.error("Background removal failed.")
+            st.error(f"Background removal failed: {error}")

@@ -8,10 +8,10 @@ def remove_background(input_path, output_path=None):
     """
     # Lazy import to prevent app startup lag/timeout
     try:
-        from rembg import remove
-    except ImportError:
-        print("Error: rembg not installed.")
-        return None
+        from rembg import remove, new_session
+    except ImportError as e:
+        return None, f"Library Error: {e}"
+
     if output_path is None:
         file_name = os.path.basename(input_path)
         name, ext = os.path.splitext(file_name)
@@ -20,17 +20,25 @@ def remove_background(input_path, output_path=None):
         output_path = os.path.join(directory, new_name)
 
     print(f"Processing image: {input_path}")
-    print("Removing background... This may take a moment for the first run.")
+    print("Removing background... Using u2netp model.")
 
     try:
         with open(input_path, 'rb') as i:
             with open(output_path, 'wb') as o:
                 input_image = i.read()
-                output_image = remove(input_image)
+                # Use u2netp (lightweight) model to prevent OOM/Timeouts on Cloud
+                model_name = "u2netp" 
+                session = new_session(model_name)
+                output_image = remove(input_image, session=session)
                 o.write(output_image)
         
+        # Verify output
+        if os.path.getsize(output_path) == 0:
+            return None, "Error: Generated file is empty."
+            
         print(f"Background removed. Saved to: {output_path}")
-        return output_path
+        return output_path, None
+        
     except Exception as e:
         print(f"Error removing background: {e}")
-        return None
+        return None, str(e)
