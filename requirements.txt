@@ -1,0 +1,5 @@
+instaloader
+rembg
+pillow
+requests
+streamlit
