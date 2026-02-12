@@ -57,9 +57,9 @@ if image_path:
     
     col1, col2 = st.columns(2)
     
-    with col1:
+        with col1:
         st.subheader("Original")
-        st.image(image_path, use_column_width=True)
+        st.image(image_path, use_container_width=True)
         
     with col2:
         st.subheader("No Background")
@@ -67,7 +67,7 @@ if image_path:
             processed_path, error = remove_background(image_path)
             
         if processed_path:
-            st.image(processed_path, caption="Background Removed", use_column_width=True)
+            st.image(processed_path, caption="Background Removed", use_container_width=True)
             
             with open(processed_path, "rb") as file:
                 st.download_button(

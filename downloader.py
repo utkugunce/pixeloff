@@ -112,9 +112,22 @@ def download_instagram_image(post_url, target_dir="downloads"):
     shortcode = match.group(1)
     print(f"Processing shortcode: {shortcode}")
 
-    # Method 1: Try Instaloader first
+    # Method 1: Media Redirect (Fastest, usually works for public posts)
+    print("Method 1: Media Redirect...")
+    path, caption = download_via_media_redirect(shortcode, target_dir)
+    if path:
+        return os.path.abspath(path), caption
+
+    # Method 2: Embed Scraper (Good backup)
+    print("Method 2: Embed Scraper...")
+    path, caption = download_via_embed(shortcode, target_dir)
+    if path:
+        return os.path.abspath(path), caption
+
+    # Method 3: Instaloader (Heavy, often blocked on cloud)
+    print("Method 3: Instaloader (Last Resort)...")
     try:
-        print("Method 1: Instaloader")
+        # Configure to fail faster
         L = instaloader.Instaloader(
             download_pictures=True,
             download_videos=False, 
@@ -122,18 +135,16 @@ def download_instagram_image(post_url, target_dir="downloads"):
             download_geotags=False,
             download_comments=False,
             save_metadata=False,
-            compress_json=False
+            compress_json=False,
+            max_connection_attempts=1, # Fail fast
+            request_timeout=5,
         )
         post = instaloader.Post.from_shortcode(L.context, shortcode)
         target_path = os.path.join(target_dir, shortcode)
         L.download_post(post, target=shortcode)
         
         # Find local file
-        files = os.listdir(target_path) if os.path.exists(target_path) else os.listdir(shortcode)
-        # Handle the case where instaloader downloads to CWD or target_dir depending on config
-        # Instaloader behavior: target=shortcode creates a folder named shortcode.
-        
-        search_dir = shortcode # Because L.download_post(target=shortcode) downloads into a folder named shortcode
+        search_dir = shortcode
         if not os.path.exists(search_dir):
              search_dir = os.path.join(target_dir, shortcode)
 
@@ -145,17 +156,5 @@ def download_instagram_image(post_url, target_dir="downloads"):
                 
     except Exception as e:
         print(f"Instaloader failed: {e}")
-    
-    # Method 2: /media/ Redirect (Very reliable for public posts)
-    print("Switching to Method 2: Media Redirect...")
-    path, caption = download_via_media_redirect(shortcode, target_dir)
-    if path:
-        return os.path.abspath(path), caption
-
-    # Method 3: Embed Scraper fallback
-    print("Switching to Method 3: Embed Scraper...")
-    path, caption = download_via_embed(shortcode, target_dir)
-    if path:
-        return os.path.abspath(path), caption
         
     return None, None
