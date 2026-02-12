@@ -4,10 +4,46 @@ import re
 import requests
 from bs4 import BeautifulSoup
 
+def download_via_media_redirect(shortcode, target_dir):
+    """
+    Fallback Method 2: Use the /media/?size=l endpoint which redirects to the image.
+    """
+    print(f"Attempting download via Media Redirect for {shortcode}...")
+    url = f"https://www.instagram.com/p/{shortcode}/media/?size=l"
+    
+    try:
+        # We need to act like a browser to avoid 403 on the redirect target
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        
+        response = requests.get(url, headers=headers, timeout=10, allow_redirects=True)
+        
+        # Check if we actually got an image
+        if "image" not in response.headers.get("Content-Type", ""):
+            print("Media redirect did not return an image.")
+            return None, None
+            
+        # Save it
+        output_dir = os.path.join(target_dir, shortcode)
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+            
+        filename = f"{shortcode}_media.jpg"
+        filepath = os.path.join(output_dir, filename)
+        
+        with open(filepath, "wb") as f:
+            f.write(response.content)
+            
+        return filepath, "Caption unavailable in media mode"
+        
+    except Exception as e:
+        print(f"Media redirect failed: {e}")
+        return None, None
+
 def download_via_embed(shortcode, target_dir):
     """
-    Fallback method: Try to download image via Instagram Embed page.
-    This page is often less rate-limited than the main GraphQL API.
+    Fallback Method 3: Try to download image via Instagram Embed page.
     """
     print(f"Attempting download via Embed for {shortcode}...")
     embed_url = f"https://www.instagram.com/p/{shortcode}/embed/captioned/"
@@ -109,9 +145,15 @@ def download_instagram_image(post_url, target_dir="downloads"):
                 
     except Exception as e:
         print(f"Instaloader failed: {e}")
-        print("Switching to Method 2: Embed Scraper...")
+    
+    # Method 2: /media/ Redirect (Very reliable for public posts)
+    print("Switching to Method 2: Media Redirect...")
+    path, caption = download_via_media_redirect(shortcode, target_dir)
+    if path:
+        return os.path.abspath(path), caption
 
-    # Method 2: Embed Scraper fallback
+    # Method 3: Embed Scraper fallback
+    print("Switching to Method 3: Embed Scraper...")
     path, caption = download_via_embed(shortcode, target_dir)
     if path:
         return os.path.abspath(path), caption
