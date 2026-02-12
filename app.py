@@ -57,7 +57,7 @@ if image_path:
     
     col1, col2 = st.columns(2)
     
-        with col1:
+    with col1:
         st.subheader("Original")
         st.image(image_path, use_container_width=True)
         
