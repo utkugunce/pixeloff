@@ -3,3 +3,4 @@ rembg
 pillow
 requests
 streamlit
+beautifulsoup4

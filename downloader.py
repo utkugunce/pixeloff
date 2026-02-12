@@ -1,100 +1,119 @@
 import instaloader
 import os
 import re
+import requests
+from bs4 import BeautifulSoup
+
+def download_via_embed(shortcode, target_dir):
+    """
+    Fallback method: Try to download image via Instagram Embed page.
+    This page is often less rate-limited than the main GraphQL API.
+    """
+    print(f"Attempting download via Embed for {shortcode}...")
+    embed_url = f"https://www.instagram.com/p/{shortcode}/embed/captioned/"
+    
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    }
+    
+    try:
+        response = requests.get(embed_url, headers=headers, timeout=10)
+        if response.status_code != 200:
+            print(f"Embed page returned status {response.status_code}")
+            return None, None
+            
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # Try to find the image in the embed page
+        # Usually it's an img with class 'EmbeddedMediaImage'
+        img_tag = soup.find('img', class_='EmbeddedMediaImage')
+        
+        if not img_tag:
+            # Fallback: look for any image that looks like the main one
+            # searching for the one with the largest resolution usually works, but let's just grab the first valid jpg
+            print("EmbeddedMediaImage class not found, searching specific pattern...")
+            return None, None
+            
+        image_url = img_tag.get('src')
+        if not image_url:
+            return None, None
+            
+        # Download the image
+        print(f"Found image URL via embed: {image_url}")
+        img_data = requests.get(image_url, headers=headers, timeout=10).content
+        
+        # Save it
+        output_dir = os.path.join(target_dir, shortcode)
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+            
+        filename = f"{shortcode}_embed.jpg"
+        filepath = os.path.join(output_dir, filename)
+        
+        with open(filepath, "wb") as f:
+            f.write(img_data)
+            
+        return filepath, "Caption unavailable in embed mode"
+        
+    except Exception as e:
+        print(f"Embed download failed: {e}")
+        return None, None
 
 def download_instagram_image(post_url, target_dir="downloads"):
     """
     Downloads the image from a given Instagram post URL.
     Returns the path to the downloaded image file.
     """
-    # Create an Instaloader instance
-    L = instaloader.Instaloader(
-        download_pictures=True,
-        download_videos=False, 
-        download_video_thumbnails=False,
-        download_geotags=False,
-        download_comments=False,
-        save_metadata=False,
-        compress_json=False
-    )
-
     # Extract shortcode from URL
-    # URL format: https://www.instagram.com/p/SHORTCODE/
     match = re.search(r'instagram\.com/p/([^/]+)', post_url)
+    if not match:
+        # Try checking if it's a reel or something else, but strictly we need shortcode
+        match = re.search(r'instagram\.com/reel/([^/]+)', post_url)
+    
     if not match:
         raise ValueError("Invalid Instagram URL. Could not find post shortcode.")
     
     shortcode = match.group(1)
-    
-    print(f"Downloading post {shortcode}...")
-    
-    # Check if img_index query param exists
-    img_index = None
-    query_match = re.search(r'[?&]img_index=(\d+)', post_url)
-    if query_match:
-        img_index = query_match.group(1)
-        print(f"Detected img_index={img_index} in URL.")
-    
+    print(f"Processing shortcode: {shortcode}")
+
+    # Method 1: Try Instaloader first
     try:
+        print("Method 1: Instaloader")
+        L = instaloader.Instaloader(
+            download_pictures=True,
+            download_videos=False, 
+            download_video_thumbnails=False,
+            download_geotags=False,
+            download_comments=False,
+            save_metadata=False,
+            compress_json=False
+        )
         post = instaloader.Post.from_shortcode(L.context, shortcode)
-        
-        # Target directory based on shortcode to keep it clean
-        download_path = os.path.join(target_dir, shortcode)
-        
-        # Download the post
+        target_path = os.path.join(target_dir, shortcode)
         L.download_post(post, target=shortcode)
         
-        # Find the image file
-        output_dir = shortcode
-        files = os.listdir(output_dir)
+        # Find local file
+        files = os.listdir(target_path) if os.path.exists(target_path) else os.listdir(shortcode)
+        # Handle the case where instaloader downloads to CWD or target_dir depending on config
+        # Instaloader behavior: target=shortcode creates a folder named shortcode.
         
-        # Filter for JPG files
-        all_jpgs = [f for f in files if f.endswith('.jpg')]
-        
-        if not all_jpgs:
-            raise FileNotFoundError("No image found in the downloaded post.")
-            
-        selected_file = None
-        
-        # Strategy:
-        # 1. If img_index is provided, try to find matching file:
-        #    - For single image: no suffix usually.
-        #    - For carousel: _1, _2, etc.
-        #    Instaloader suffixes are 1-based index.
-        #    So img_index=1 -> _1.jpg, img_index=2 -> _2.jpg
-        
-        if img_index:
-            # Look for file ending with _{img_index}.jpg
-            expected_suffix = f"_{img_index}.jpg"
-            # Also handle case where img_index=1 might be the ONLY image (no suffix)
-            # But normally instaloader adds suffix only if multiple? No, for carousel it adds _1.
-            
-            candidates = [f for f in all_jpgs if f.endswith(expected_suffix)]
-            if candidates:
-                selected_file = candidates[0]
-            else:
-                print(f"Warning: requested img_index={img_index} not found in files: {all_jpgs}. Falling back to first image.")
-        
-        if not selected_file:
-            # Default to the first one (usually _1.jpg or no suffix)
-            # Sort to ensure deterministic order (alphabetical usually works for dates + suffix)
-            all_jpgs.sort()
-            selected_file = all_jpgs[0]
-            
-        final_image_path = os.path.abspath(os.path.join(output_dir, selected_file))
-        
-        caption_text = ""
-        if txt_files:
-            try:
-                with open(os.path.join(output_dir, txt_files[0]), 'r', encoding='utf-8') as f:
-                    caption_text = f.read()
-            except Exception as e:
-                print(f"Could not read caption: {e}")
+        search_dir = shortcode # Because L.download_post(target=shortcode) downloads into a folder named shortcode
+        if not os.path.exists(search_dir):
+             search_dir = os.path.join(target_dir, shortcode)
 
-        final_image_path = os.path.abspath(os.path.join(output_dir, selected_file))
-        return final_image_path, caption_text
-
-
+        if os.path.exists(search_dir):
+            files = [f for f in os.listdir(search_dir) if f.endswith('.jpg')]
+            if files:
+                files.sort()
+                return os.path.abspath(os.path.join(search_dir, files[0])), "Caption downloaded"
+                
     except Exception as e:
-        print(f"Error downloading post: {e}")
-        return None, None
+        print(f"Instaloader failed: {e}")
+        print("Switching to Method 2: Embed Scraper...")
+
+    # Method 2: Embed Scraper fallback
+    path, caption = download_via_embed(shortcode, target_dir)
+    if path:
+        return os.path.abspath(path), caption
+        
+    return None, None
