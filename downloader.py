@@ -37,16 +37,19 @@ def download_via_embed_browser(shortcode, target_dir, img_index=1):
         from playwright.sync_api import sync_playwright
     except ImportError:
         print("Playwright not installed. Skipping browser method.")
-        return None, None
+        return None, "Playwright library not found"
     
     embed_url = f"https://www.instagram.com/p/{shortcode}/embed/captioned/"
     
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            print("Launching browser...")
+            browser = p.chromium.launch(headless=True) # Ensure headless=True for cloud
+            print("Browser launched. Creating page...")
             page = browser.new_page(user_agent=_HEADERS["User-Agent"])
-            page.goto(embed_url, wait_until="networkidle", timeout=15000)
-            page.wait_for_timeout(2000)  # Extra wait for images to load
+            print(f"Navigating to {embed_url}...")
+            page.goto(embed_url, wait_until="networkidle", timeout=20000) # Increased timeout
+            print("Page loaded. Waiting 2s...")
             
             # Click "Next" button (img_index - 1) times to reach the desired slide
             for i in range(img_index - 1):
@@ -115,7 +118,7 @@ def download_via_embed_browser(shortcode, target_dir, img_index=1):
                 
     except Exception as e:
         print(f"Embed browser download failed: {e}")
-        return None, None
+        return None, f"Browser Error: {e}"
 
 def download_via_media_redirect(shortcode, target_dir):
     """

@@ -30,8 +30,12 @@ with tab1:
                 try:
                     image_path, caption = download_instagram_image(url)
                     if not image_path:
+                        # caption contains the error message in this case
+                        error_msg = caption if caption else "Unknown error"
                         status.update(label="Download failed!", state="error", expanded=False)
-                        st.error("Instagram blocked the download (common in cloud servers). Please try uploading the image directly in the 'Upload Image' tab.")
+                        st.error(f"Download failed: {error_msg}")
+                        if "Playwright" in error_msg or "Browser" in error_msg:
+                            st.warning("Tip: This might be a cloud server issue. Try the 'Upload Image' tab.")
                     else:
                         status.update(label="Download complete!", state="complete", expanded=False)
                 except Exception as e:
