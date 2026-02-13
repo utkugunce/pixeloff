@@ -69,6 +69,11 @@ with st.sidebar:
         st.session_state['debug_mode'] = True
     else:
         st.session_state['debug_mode'] = False
+        
+    if st.checkbox("📸 Visual Debug (Browser Screenshot)", help="Shows what the browser sees when 'Headless Browser' method runs."):
+        st.session_state['visual_debug'] = True
+    else:
+        st.session_state['visual_debug'] = False
 
     st.info("If you see 'Connection Reset' or a black screen, please **refresh the page** (F5).")
 
@@ -146,6 +151,14 @@ if st.button("Download & Process", type="primary"):
 # Processing Section
 if image_path:
     st.divider()
+    
+    # Display Visual Debug Screenshot if enabled
+    if st.session_state.get('visual_debug'):
+        debug_shot = os.path.join("downloads", "debug_last_browser.png")
+        if os.path.exists(debug_shot):
+            with st.expander("📸 Visual Debug (Browser Screenshot)", expanded=True):
+                st.image(debug_shot, caption="What the browser saw during extraction")
+    
     st.write("### 2️⃣ Result")
     
     col1, col2 = st.columns(2)
