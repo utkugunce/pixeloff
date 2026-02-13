@@ -10,23 +10,28 @@ st.set_page_config(
     layout="centered"
 )
 
-st.title("✨ PixelOff")
-st.markdown("Instagram fotoğraflarını indir, arkaplanını **PixelOff** ile saniyeler içinde temizle!")
+
 
 # Auto-install Playwright browsers (Cloud fix)
 @st.cache_resource
 def install_playwright_browsers():
+    # Check if browsers are likely installed to avoid subprocess overhead
+    # This is a heuristic; actual check is managed by playwright install
     print("Checking Playwright browsers...")
     import subprocess
     try:
         # Install only chromium to save space/time
+        # Using st.spinner inside cache_resource might be tricky, so we do it outside
         subprocess.run(["playwright", "install", "chromium"], check=True)
         print("Playwright browsers installed successfully.")
     except Exception as e:
         print(f"Error installing Playwright browsers: {e}")
 
-# Run installation once
-install_playwright_browsers()
+st.title("✨ PixelOff")
+st.markdown("Instagram fotoğraflarını indir, arkaplanını **PixelOff** ile saniyeler içinde temizle!")
+
+with st.spinner("Setting up browser environment... (this may take a minute on first run)"):
+    install_playwright_browsers()
 
 # Input Section
 st.write("### 1️⃣ Choose your image source")
