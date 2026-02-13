@@ -132,16 +132,14 @@ def download_via_embed_json(shortcode, target_dir, img_index=1):
     try:
         response = requests.get(embed_url, headers=_HEADERS, timeout=15)
         if response.status_code != 200:
-            print(f"Embed page returned status {response.status_code}")
-            return None, None
+            return None, f"Embed page returned status {response.status_code}"
         
         html = response.text
         
         # Look for contextJSON in the HTML
         context_match = re.search(r'"contextJSON"\s*:\s*"((?:[^"\\]|\\.)*)"', html)
         if not context_match:
-            print("No contextJSON found in embed HTML.")
-            return None, None
+            return None, "No contextJSON found in embed HTML"
         
         # Unescape the JSON string
         json_str = context_match.group(1)
@@ -151,17 +149,24 @@ def download_via_embed_json(shortcode, target_dir, img_index=1):
         json_str = json_str.replace('\\t', '\t')
         json_str = json_str.replace('\\/', '/')
         
-        data = json.loads(json_str)
-        
+        try:
+            data = json.loads(json_str)
+        except json.JSONDecodeError as e:
+             # Try a more aggressive cleanup if standard JSON fails
+             try:
+                 # Sometimes keys aren't quoted properly or other weirdness?
+                 # Actually, usually it's just unicode escapes
+                 data = json.loads(json_str)
+             except:
+                 return None, f"JSON parse error: {e}"
+
         gql_data = data.get('gql_data')
         if not gql_data:
-            print("gql_data is null — Instagram may be blocking this request.")
-            return None, None
+            return None, "gql_data is null in embed JSON"
         
         media = gql_data.get('shortcode_media')
         if not media:
-            print("shortcode_media not found in gql_data.")
-            return None, None
+            return None, "shortcode_media not found in gql_data"
         
         # Extract carousel slides
         slides = []
@@ -181,8 +186,7 @@ def download_via_embed_json(shortcode, target_dir, img_index=1):
             })
         
         if not slides:
-            print("No slides found in gql_data.")
-            return None, None
+            return None, "No slides found in gql_data"
         
         print(f"Found {len(slides)} slides via embed JSON!")
         
@@ -198,7 +202,10 @@ def download_via_embed_json(shortcode, target_dir, img_index=1):
         
         image_url = target_slide.get('url')
         if not image_url:
-            return None, None
+            return None, "Slide URL is empty"
+            
+        # Fix escaped slashes just in case
+        image_url = image_url.replace(r'\/', '/')
         
         print(f"Downloading slide {img_index}/{len(slides)}: {image_url[:80]}...")
         
@@ -212,15 +219,12 @@ def download_via_embed_json(shortcode, target_dir, img_index=1):
                 f.write(img_response.content)
             return filepath, f"Slide {img_index}/{len(slides)}"
         else:
-            print(f"Image download failed (status {img_response.status_code})")
-            return None, None
+            return None, f"Image download status {img_response.status_code}"
             
     except json.JSONDecodeError as e:
-        print(f"JSON parse error: {e}")
-        return None, None
+        return None, f"JSON parse error: {e}"
     except Exception as e:
-        print(f"Embed JSON extraction failed: {e}")
-        return None, None
+        return None, f"Embed JSON extraction failed: {e}"
 
 
 def download_via_embed_browser(shortcode, target_dir, img_index=1):
@@ -314,6 +318,8 @@ def download_via_embed_browser(shortcode, target_dir, img_index=1):
                     return None, f"Slide {img_index} is a video, not an image."
                 
                 image_url = target_slide['url']
+                # Fix escaped slashes which cause requests to fail
+                image_url = image_url.replace(r'\/', '/')
                 print(f"Downloading slide {img_index}: {image_url[:80]}...")
                 
                 response = requests.get(image_url, headers=_HEADERS, timeout=15)
