@@ -13,6 +13,15 @@ st.set_page_config(
 st.title("✨ PixelOff")
 st.markdown("Instagram fotoğraflarını indir, arkaplanını **PixelOff** ile saniyeler içinde temizle!")
 
+# Sidebar Troubleshooting
+with st.sidebar:
+    st.header("🛠️ Troubleshooting")
+    if st.button("♻️ Clear Model Cache", help="Clears loaded models from memory. Use if the app feels slow or crashes."):
+        st.cache_resource.clear()
+        st.success("Cache cleared! Models will reload on next use.")
+    
+    st.info("If you see 'Connection Reset' or a black screen, please **refresh the page** (F5). This usually solves memory-related issues when switching between high-quality models.")
+
 image_path = None
 
 # Input Section
@@ -39,17 +48,6 @@ if st.button("Download & Process", type="primary"):
     if not url:
         st.error("Please enter a valid URL.")
     else:
-        # If slide > 1, try to install Playwright browsers lazily
-        # (Only if mobile/JSON methods fail, though they are prioritized now)
-        if slide_num > 1:
-            try:
-                # We do a quick check to see if we might need browser
-                # But actually, successful implementations (JSON/Mobile) don't need it.
-                # We'll just let the downloader handle it.
-                pass
-            except:
-                pass
-
         with st.status("Downloading from Instagram...", expanded=True) as status:
             st.write("📥 Connecting to Instagram...")
             try:
@@ -80,6 +78,7 @@ if image_path:
     with col2:
         st.subheader("No Background")
         with st.spinner(f"Removing background... ({mode})"):
+            # isnet-general-use / u2net_human_seg
             processed_path, error = remove_background(image_path, model_name=model_name)
             
         if processed_path:
