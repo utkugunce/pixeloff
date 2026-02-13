@@ -101,10 +101,11 @@ def download_instagram_image(post_url, target_dir="downloads"):
     Returns the path to the downloaded image file.
     """
     # Extract shortcode from URL
-    match = re.search(r'instagram\.com/p/([^/]+)', post_url)
+    # Support URLs with or without username: instagram.com/p/CODE or instagram.com/username/p/CODE
+    match = re.search(r'instagram\.com/(?:[^/]+/)?p/([^/?#]+)', post_url)
     if not match:
-        # Try checking if it's a reel or something else, but strictly we need shortcode
-        match = re.search(r'instagram\.com/reel/([^/]+)', post_url)
+        # Try checking if it's a reel: instagram.com/reel/CODE or instagram.com/username/reel/CODE
+        match = re.search(r'instagram\.com/(?:[^/]+/)?reel/([^/?#]+)', post_url)
     
     if not match:
         raise ValueError("Invalid Instagram URL. Could not find post shortcode.")
