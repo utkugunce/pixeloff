@@ -4,3 +4,4 @@ pillow
 requests
 streamlit
 beautifulsoup4
+playwright

@@ -5,6 +5,103 @@ import requests
 from urllib.parse import urlparse, parse_qs
 from bs4 import BeautifulSoup
 
+def download_via_embed_browser(shortcode, target_dir, img_index=1):
+    """
+    Use Playwright headless browser to render the Instagram embed page
+    and extract carousel images. Works on cloud servers where Instaloader
+    gets blocked.
+    """
+    print(f"Attempting download via Embed Browser for {shortcode} (slide {img_index})...")
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        print("Playwright not installed. Skipping browser method.")
+        return None, None
+    
+    embed_url = f"https://www.instagram.com/p/{shortcode}/embed/captioned/"
+    
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            )
+            page.goto(embed_url, wait_until="networkidle", timeout=15000)
+            page.wait_for_timeout(2000)  # Extra wait for images to load
+            
+            # Click "Next" button (img_index - 1) times to reach the desired slide
+            for i in range(img_index - 1):
+                # Try different selectors for the Next button
+                next_btn = page.query_selector('button[aria-label="İleri"]') or \
+                           page.query_selector('button[aria-label="Next"]') or \
+                           page.query_selector('div[role="button"][aria-label="İleri"]') or \
+                           page.query_selector('div[role="button"][aria-label="Next"]')
+                if next_btn:
+                    next_btn.click()
+                    page.wait_for_timeout(800)  # Wait for slide transition
+                else:
+                    print(f"Next button not found at step {i+1}. Max slides may be reached.")
+                    break
+            
+            # Collect all large images from the DOM
+            images = page.evaluate('''
+                () => {
+                    const imgs = Array.from(document.querySelectorAll('img'));
+                    return imgs
+                        .filter(img => img.naturalWidth >= 500 || img.src.includes('s1080x1080'))
+                        .map(img => ({
+                            src: img.src,
+                            className: img.className,
+                            width: img.naturalWidth
+                        }));
+                }
+            ''')
+            
+            browser.close()
+            
+            if not images:
+                print("No large images found in embed page.")
+                return None, None
+            
+            # Pick the best image: prefer EmbeddedMediaImage class, otherwise largest
+            target_img = None
+            for img in images:
+                if 'EmbeddedMediaImage' in img.get('className', ''):
+                    target_img = img
+                    break
+            if not target_img:
+                # Get the largest image
+                target_img = max(images, key=lambda x: x.get('width', 0))
+            
+            image_url = target_img['src']
+            print(f"Found image URL via embed browser: {image_url[:80]}...")
+            
+            # Download the image
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            }
+            response = requests.get(image_url, headers=headers, timeout=15)
+            
+            if response.status_code == 200:
+                output_dir = os.path.join(target_dir, shortcode)
+                if not os.path.exists(output_dir):
+                    os.makedirs(output_dir)
+                
+                filename = f"{shortcode}_slide{img_index}.jpg"
+                filepath = os.path.join(output_dir, filename)
+                
+                with open(filepath, "wb") as f:
+                    f.write(response.content)
+                
+                return filepath, "Caption unavailable in embed browser mode"
+            else:
+                print(f"Failed to download image (status: {response.status_code})")
+                return None, None
+                
+    except Exception as e:
+        print(f"Embed browser download failed: {e}")
+        return None, None
+
 def download_via_media_redirect(shortcode, target_dir):
     """
     Fallback Method 2: Use the /media/?size=l endpoint which redirects to the image.
@@ -134,8 +231,8 @@ def download_instagram_image(post_url, target_dir="downloads"):
     img_index = _parse_img_index(post_url)
     print(f"Processing shortcode: {shortcode}, img_index: {img_index}")
 
-    # Methods 1 & 2 can only fetch the first image of a carousel.
-    # If user wants a specific slide (img_index > 1), skip directly to Instaloader.
+    # Methods 1 & 2 (Media Redirect / Embed scraper) can only fetch the first image.
+    # If user wants a specific slide (img_index > 1), skip directly to browser/Instaloader.
     if img_index == 1:
         # Method 1: Media Redirect (Fastest, usually works for public posts)
         print("Method 1: Media Redirect...")
@@ -143,16 +240,22 @@ def download_instagram_image(post_url, target_dir="downloads"):
         if path:
             return os.path.abspath(path), caption
 
-        # Method 2: Embed Scraper (Good backup)
+        # Method 2: Embed Scraper (Good backup, no JS needed)
         print("Method 2: Embed Scraper...")
         path, caption = download_via_embed(shortcode, target_dir)
         if path:
             return os.path.abspath(path), caption
     else:
-        print(f"Carousel image #{img_index} requested — skipping Media Redirect & Embed (they only support first image).")
+        print(f"Carousel image #{img_index} requested — skipping Media Redirect & static Embed.")
 
-    # Method 3: Instaloader (supports carousel slide selection)
-    print("Method 3: Instaloader...")
+    # Method 3: Playwright Embed Browser (supports carousel slide selection, works on cloud)
+    print(f"Method 3: Embed Browser (Playwright)...")
+    path, caption = download_via_embed_browser(shortcode, target_dir, img_index)
+    if path:
+        return os.path.abspath(path), caption
+
+    # Method 4: Instaloader (supports carousel, but often blocked on cloud)
+    print("Method 4: Instaloader (Last Resort)...")
     try:
         # Configure to fail faster
         L = instaloader.Instaloader(
