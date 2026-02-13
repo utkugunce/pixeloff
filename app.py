@@ -86,12 +86,32 @@ image_path = None
 st.write("### 1️⃣ Instagram URL")
 url = st.text_input("Paste Instagram Post URL:", placeholder="https://www.instagram.com/p/...")
 
-# Carousel slide selector
-slide_num = st.number_input(
-    "📸 Carousel slide number (1 = first photo)",
-    min_value=1, max_value=100, value=1, step=1,
-    help="If the post is a carousel, choose which slide to download (e.g. 6)."
-)
+# Smart Carousel Detection
+slide_num = 1
+is_carousel = False
+
+if url:
+    if "img_index=" in url:
+        is_carousel = True
+        try:
+            from urllib.parse import urlparse, parse_qs
+            parsed = urlparse(url)
+            params = parse_qs(parsed.query)
+            if 'img_index' in params:
+                slide_num = int(params['img_index'][0])
+        except:
+            pass
+
+if is_carousel:
+    slide_num = st.number_input(
+        "📸 Carousel slide number",
+        min_value=1, max_value=100, value=slide_num, step=1,
+        help="Post found to be a carousel. You can change which slide to download."
+    )
+else:
+    # Hidden state or minimal manual trigger
+    if st.toggle("Manual slide selection", value=False, help="Show selector even if not detected in URL."):
+        slide_num = st.number_input("📸 Carousel slide number", min_value=1, max_value=100, value=1)
 
 # Model Selection
 mode = st.radio(
