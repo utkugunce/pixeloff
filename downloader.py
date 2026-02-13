@@ -244,10 +244,10 @@ def _parse_img_index(post_url):
         pass
     return 1
 
-def download_instagram_image(post_url, target_dir="downloads"):
+def download_instagram_image(post_url, target_dir="downloads", img_index=None):
     """
     Downloads the image from a given Instagram post URL.
-    Supports carousel posts via ?img_index=N parameter.
+    Supports carousel posts via img_index parameter or ?img_index=N in URL.
     Returns the path to the downloaded image file.
     """
     # Extract shortcode from URL
@@ -261,7 +261,9 @@ def download_instagram_image(post_url, target_dir="downloads"):
         raise ValueError("Invalid Instagram URL. Could not find post shortcode.")
     
     shortcode = match.group(1)
-    img_index = _parse_img_index(post_url)
+    # Use provided img_index, or parse from URL, default to 1
+    if img_index is None:
+        img_index = _parse_img_index(post_url)
     print(f"Processing shortcode: {shortcode}, img_index: {img_index}")
     
     # Clean up target directory before downloading to avoid stale files
@@ -355,4 +357,6 @@ def download_instagram_image(post_url, target_dir="downloads"):
     except Exception as e:
         print(f"Instaloader failed: {e}")
         
-    return None, None
+    if img_index > 1:
+        return None, f"Carousel slide {img_index} could not be downloaded. Browser or Instaloader needed but both failed."
+    return None, "All download methods failed for this post."

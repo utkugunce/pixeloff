@@ -10,37 +10,8 @@ st.set_page_config(
     layout="centered"
 )
 
-
-
-# Auto-install Playwright browsers (Cloud fix)
-@st.cache_resource
-def install_playwright_browsers():
-    # Check if browsers are likely installed to avoid subprocess overhead
-    # This is a heuristic; actual check is managed by playwright install
-    print("Checking Playwright browsers...")
-    import subprocess
-    try:
-        # Install only chromium to save space/time
-        # Using st.spinner inside cache_resource might be tricky, so we do it outside
-        subprocess.run(["playwright", "install", "chromium"], check=True)
-        print("Playwright browsers installed successfully.")
-    except Exception as e:
-        print(f"Error installing Playwright browsers: {e}")
-
 st.title("✨ PixelOff")
 st.markdown("Instagram fotoğraflarını indir, arkaplanını **PixelOff** ile saniyeler içinde temizle!")
-
-
-# Input Section
-with st.sidebar:
-    st.header("🔧 Troubleshooting")
-    if st.button("Re-install Browsers"):
-        with st.spinner("Installing browsers..."):
-            install_playwright_browsers()
-            st.success("Installation complete!")
-
-# with st.spinner("Setting up browser environment... (this may take a minute on first run)"):
-#     install_playwright_browsers()
 
 # Input Section
 st.write("### 1️⃣ Choose your image source")
@@ -50,21 +21,45 @@ image_path = None
 
 with tab1:
     url = st.text_input("Paste Instagram Post URL:", placeholder="https://www.instagram.com/p/...")
+    
+    # Carousel slide selector
+    slide_num = st.number_input(
+        "📸 Carousel slide number (1 = first photo)",
+        min_value=1, max_value=20, value=1, step=1,
+        help="If the post is a carousel (multiple photos), choose which slide to download."
+    )
+    
     if st.button("Download & Process", type="primary"):
         if not url:
             st.error("Please enter a valid URL.")
         else:
+            # If slide > 1, try to install Playwright browsers first
+            if slide_num > 1:
+                with st.status("Preparing carousel support...", expanded=True) as prep_status:
+                    st.write("🔧 Installing browser for carousel navigation...")
+                    try:
+                        import subprocess
+                        subprocess.run(
+                            ["playwright", "install", "chromium"],
+                            check=True, timeout=120,
+                            capture_output=True
+                        )
+                        prep_status.update(label="Browser ready!", state="complete", expanded=False)
+                    except Exception as e:
+                        prep_status.update(label="Browser setup failed", state="error", expanded=False)
+                        st.warning(f"⚠️ Browser setup failed: {e}. Trying alternative methods...")
+
             with st.status("Downloading from Instagram...", expanded=True) as status:
                 st.write("📥 Connecting to Instagram...")
                 try:
-                    image_path, caption = download_instagram_image(url)
+                    image_path, caption = download_instagram_image(url, img_index=slide_num)
                     if not image_path:
-                        # caption contains the error message in this case
                         error_msg = caption if caption else "Unknown error"
                         status.update(label="Download failed!", state="error", expanded=False)
                         st.error(f"Download failed: {error_msg}")
-                        if "Playwright" in error_msg or "Browser" in error_msg:
-                            st.warning("Tip: This might be a cloud server issue. Try the 'Upload Image' tab.")
+                        if slide_num > 1:
+                            st.info("💡 **Tip**: Carousel downloads require a browser. "
+                                    "Try uploading the image manually instead.")
                     else:
                         status.update(label="Download complete!", state="complete", expanded=False)
                 except Exception as e:
@@ -74,7 +69,6 @@ with tab1:
 with tab2:
     uploaded_file = st.file_uploader("Upload an image (JPG/PNG)", type=["jpg", "jpeg", "png"])
     if uploaded_file is not None:
-        # Save uploaded file to specific path
         if not os.path.exists("uploads"):
             os.makedirs("uploads")
         image_path = os.path.join("uploads", uploaded_file.name)
