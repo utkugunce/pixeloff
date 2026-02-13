@@ -48,7 +48,7 @@ def _log_diagnostic(target_dir, label, content):
         diag_path = os.path.join(target_dir, "last_response.log")
         with open(diag_path, "a", encoding="utf-8") as f:
             f.write(f"\n\n--- {label} ({time.ctime()}) ---\n")
-            f.write(content[:10000]) # Increased limit for v2.1
+            f.write(content[:10000])
     except: pass
 
 def _shortcode_to_mediaid(shortcode):
@@ -59,8 +59,7 @@ def _shortcode_to_mediaid(shortcode):
     return media_id
 
 def download_via_crawler(url, shortcode, target_dir, img_index=1):
-    """Method 1: Crawler Mimic (v2.1 Kesin Çözüm)"""
-    print(f"Attempting Crawler Mode for {shortcode}...")
+    """Method 1: Crawler Mimic (v2.2 Single Post Optimized)"""
     headers = {
         "User-Agent": "Googlebot/2.1 (+http://www.google.com/bot.html)",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
@@ -73,7 +72,32 @@ def download_via_crawler(url, shortcode, target_dir, img_index=1):
         
         if res.status_code == 200:
             html = res.text
-            # 1. Try JSON-LD (Search engine structured data)
+            
+            # v2.2 Optimization: Faster Meta Tag Discovery for single posts
+            if img_index == 1:
+                # 1. OG Image (Standard)
+                og_img = re.search(r'<meta property="og:image" content="(.*?)"', html)
+                if og_img:
+                    img_url = og_img.group(1).replace("&amp;", "&")
+                    ir = session.get(img_url, headers=_HEADERS, timeout=15)
+                    if ir.status_code == 200:
+                        path = os.path.join(os.path.join(target_dir, shortcode), f"{shortcode}_slide{img_index}.jpg")
+                        _ensure_dir(os.path.dirname(path))
+                        with open(path, "wb") as f: f.write(ir.content)
+                        return path, "Single Post (OG-Meta)"
+                
+                # 2. Twitter Image (Fallback)
+                tw_img = re.search(r'<meta name="twitter:image" content="(.*?)"', html)
+                if tw_img:
+                    img_url = tw_img.group(1).replace("&amp;", "&")
+                    ir = session.get(img_url, headers=_HEADERS, timeout=15)
+                    if ir.status_code == 200:
+                        path = os.path.join(os.path.join(target_dir, shortcode), f"{shortcode}_slide{img_index}.jpg")
+                        _ensure_dir(os.path.dirname(path))
+                        with open(path, "wb") as f: f.write(ir.content)
+                        return path, "Single Post (Twitter-Meta)"
+
+            # 3. JSON-LD (Search engine structured data)
             ld_json = re.search(r'<script type="application/ld\+json">(.*?)</script>', html, re.DOTALL)
             if ld_json:
                 try:
@@ -85,24 +109,14 @@ def download_via_crawler(url, shortcode, target_dir, img_index=1):
                             path = os.path.join(os.path.join(target_dir, shortcode), f"{shortcode}_slide{img_index}.jpg")
                             _ensure_dir(os.path.dirname(path))
                             with open(path, "wb") as f: f.write(ir.content)
-                            return path, "Slide 1 (JSON-LD)"
+                            return path, "Single Post (JSON-LD)"
                 except: pass
 
-            # 2. Try OG Meta Tags
-            og_img = re.search(r'<meta property="og:image" content="(.*?)"', html)
-            if og_img and img_index == 1:
-                img_url = og_img.group(1).replace("&amp;", "&")
-                ir = session.get(img_url, headers=_HEADERS, timeout=15)
-                if ir.status_code == 200:
-                    path = os.path.join(os.path.join(target_dir, shortcode), f"{shortcode}_slide{img_index}.jpg")
-                    _ensure_dir(os.path.dirname(path))
-                    with open(path, "wb") as f: f.write(ir.content)
-                    return path, "Slide 1 (OG-Meta)"
         return None, f"Crawler: HTTP {res.status_code}"
     except Exception as e: return None, f"Crawler: {e}"
 
 def download_via_oembed(url, shortcode, target_dir, img_index=1):
-    """Method 2: OEmbed (v2.1)"""
+    """Method 2: OEmbed (v2.2)"""
     oembed_url = f"https://www.instagram.com/oembed/?url={quote(url)}"
     try:
         session = requests.Session()
@@ -117,12 +131,12 @@ def download_via_oembed(url, shortcode, target_dir, img_index=1):
                     path = os.path.join(os.path.join(target_dir, shortcode), f"{shortcode}_slide{img_index}.jpg")
                     _ensure_dir(os.path.dirname(path))
                     with open(path, "wb") as f: f.write(ir.content)
-                    return path, "Slide 1 (OEmbed)"
+                    return path, "Single Post (OEmbed)"
         return None, f"OEmbed: HTTP {res.status_code}"
     except: return None, "OEmbed: Error"
 
 def download_via_mobile_api(shortcode, target_dir, img_index=1):
-    """Method 3: i.instagram.com Mobile API (v2.1)"""
+    """Method 3: i.instagram.com Mobile API"""
     media_id = _shortcode_to_mediaid(shortcode)
     api_url = f"https://i.instagram.com/api/v1/media/{media_id}/info/"
     
@@ -158,7 +172,7 @@ def download_via_mobile_api(shortcode, target_dir, img_index=1):
     except Exception as e: return None, f"Mobile API: {e}"
 
 def download_via_polaris_api(shortcode, target_dir, img_index=1):
-    """Method 4: Polaris API (v2.1 fresh session)"""
+    """Method 4: Polaris API"""
     media_id = _shortcode_to_mediaid(shortcode)
     api_url = f"https://www.instagram.com/api/v1/media/{media_id}/info/"
     
@@ -192,7 +206,7 @@ def download_via_polaris_api(shortcode, target_dir, img_index=1):
     except Exception as e: return None, f"Polaris: {e}"
 
 def download_via_embed_json(shortcode, target_dir, img_index=1):
-    """Method 5: Deep Discovery v2.1"""
+    """Method 5: Deep Scraper"""
     url = f"https://www.instagram.com/p/{shortcode}/embed/captioned/"
     try:
         session = requests.Session()
@@ -246,7 +260,7 @@ def download_via_embed_json(shortcode, target_dir, img_index=1):
     except Exception as e: return None, f"Scraper: {e}"
 
 def download_via_embed_browser(shortcode, target_dir, img_index=1):
-    """Method 6: Browser v2.1"""
+    """Method 6: Browser Interception"""
     try: from playwright.sync_api import sync_playwright
     except ImportError: return None, "Browser: Missing Playwright"
     
@@ -293,7 +307,7 @@ def download_via_instaloader(shortcode, target_dir, img_index=1):
                 path = os.path.join(os.path.join(target_dir, shortcode), f"{shortcode}_slide{img_index}.jpg")
                 _ensure_dir(os.path.dirname(path))
                 with open(path, "wb") as f: f.write(res.content)
-                return path, f"Slide {img_index} (Instaloader)"
+                return path, "Single Post (Instaloader)"
     except Exception as e: return None, f"Instaloader: {e}"
     return None, None
 
@@ -307,7 +321,7 @@ def download_instagram_image(url, target_dir="downloads", img_index=1):
     open(os.path.join(target_dir, "last_response.log"), "w").close()
 
     methods = [
-        (lambda: download_via_crawler(url, shortcode, target_dir, img_index), "Crawler Mode"),
+        (lambda: download_via_crawler(url, shortcode, target_dir, img_index), "Single Post Mode"),
         (lambda: download_via_oembed(url, shortcode, target_dir, img_index), "OEmbed"),
         (lambda: download_via_mobile_api(shortcode, target_dir, img_index), "Mobile API"),
         (lambda: download_via_polaris_api(shortcode, target_dir, img_index), "Polaris API"),

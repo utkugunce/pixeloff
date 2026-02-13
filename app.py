@@ -170,21 +170,21 @@ if st.button("Download & Process", type="primary"):
     if not url:
         st.error("Please enter a valid URL.")
     else:
-        with st.status("Processing v2.1 (Kesin Çözüm: Crawler Mode)...", expanded=True) as status:
-            st.write("🤖 **Mimicking GoogleBot...** (Bypassing IP Block)")
+        with st.status("Processing v2.2 (Single Post Optimization)...", expanded=True) as status:
+            st.write("🎯 **Targeting Single Post Metadata...**")
             try:
                 from downloader import download_instagram_image
                 image_path, caption = download_instagram_image(url, img_index=slide_num)
                 if not image_path:
                     error_msg = caption if caption else "Unknown error"
                     st.session_state['last_error'] = error_msg
-                    status.update(label="Extraction failed across all routes.", state="error", expanded=False)
+                    status.update(label="Extraction failed. IP block is severe.", state="error", expanded=False)
                     st.error(f"Download failed: {error_msg}")
                     
                     if st.session_state.get('debug_mode'):
                         st.expander("Show detailed error logs").write(error_msg)
                 else:
-                    status.update(label="Found matching slide!", state="complete", expanded=False)
+                    status.update(label="Found image!", state="complete", expanded=False)
                     st.session_state['last_image'] = image_path
                     st.session_state['last_error'] = ""
             except Exception as e:
