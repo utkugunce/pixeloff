@@ -1,7 +1,8 @@
 instaloader
-rembg[cpu]
+rembg[cpu]>=2.0.50
 pillow
 requests
 streamlit
 beautifulsoup4
 playwright
+numpy<2
