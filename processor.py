@@ -20,14 +20,15 @@ def remove_background(input_path, output_path=None):
         output_path = os.path.join(directory, new_name)
 
     print(f"Processing image: {input_path}")
-    print("Removing background... Using u2netp model.")
+    print("Removing background... Using IS-Net model (high quality).")
 
     try:
         with open(input_path, 'rb') as i:
             input_image = i.read()
             
         # Use cached session to prevent reloading model
-        session = _get_rembg_session("u2netp")
+        # 'isnet-general-use' is significantly better than u2netp
+        session = _get_rembg_session("isnet-general-use")
         output_image = remove(input_image, session=session)
         
         with open(output_path, 'wb') as o:

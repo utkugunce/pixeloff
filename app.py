@@ -89,7 +89,7 @@ if image_path:
         
     with col2:
         st.subheader("No Background")
-        with st.spinner("Removing background... (using lightweight model)"):
+        with st.spinner("Removing background... (high quality model)"):
             processed_path, error = remove_background(image_path)
             
         if processed_path:
