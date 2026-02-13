@@ -54,16 +54,37 @@ def download_via_embed_browser(shortcode, target_dir, img_index=1):
             # Click "Next" button (img_index - 1) times to reach the desired slide
             for i in range(img_index - 1):
                 # Try different selectors for the Next button
-                next_btn = page.query_selector('button[aria-label="İleri"]') or \
+                # ._afxw is the class for the Next button in embed view (verified by agent)
+                next_btn = page.query_selector('button._afxw') or \
                            page.query_selector('button[aria-label="Next"]') or \
-                           page.query_selector('div[role="button"][aria-label="İleri"]') or \
-                           page.query_selector('div[role="button"][aria-label="Next"]')
+                           page.query_selector('button[aria-label="İleri"]') or \
+                           page.query_selector('div[role="button"][aria-label="Next"]') or \
+                           page.query_selector('div[role="button"][aria-label="İleri"]')
+                
                 if next_btn:
-                    next_btn.click()
-                    page.wait_for_timeout(800)  # Wait for slide transition
+                    print(f"Clicking next button (step {i+1})...")
+                    try:
+                        next_btn.click(force=True) # Force click in case of overlays
+                        page.wait_for_timeout(1000)  # Wait for slide transition
+                        # Debug: take screenshot
+                        # page.screenshot(path=os.path.join(target_dir, f"debug_slide_{i+1}.png"))
+                    except Exception as e:
+                         print(f"Error clicking next button: {e}")
                 else:
                     print(f"Next button not found at step {i+1}. Max slides may be reached.")
+                    # Take a screenshot to see why
+                    debug_path = os.path.join(target_dir, f"debug_failed_nav_{shortcode}.png")
+                    try:
+                        page.screenshot(path=debug_path)
+                        print(f"Saved debug screenshot to {debug_path}")
+                    except:
+                        pass
                     break
+            
+            # Wait a bit more for high-res image to load
+            page.wait_for_timeout(1000)
+
+            # Collect all large images from the DOM
             
             # Collect all large images from the DOM
             images = page.evaluate('''
