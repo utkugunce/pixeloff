@@ -30,8 +30,17 @@ def install_playwright_browsers():
 st.title("✨ PixelOff")
 st.markdown("Instagram fotoğraflarını indir, arkaplanını **PixelOff** ile saniyeler içinde temizle!")
 
-with st.spinner("Setting up browser environment... (this may take a minute on first run)"):
-    install_playwright_browsers()
+
+# Input Section
+with st.sidebar:
+    st.header("🔧 Troubleshooting")
+    if st.button("Re-install Browsers"):
+        with st.spinner("Installing browsers..."):
+            install_playwright_browsers()
+            st.success("Installation complete!")
+
+# with st.spinner("Setting up browser environment... (this may take a minute on first run)"):
+#     install_playwright_browsers()
 
 # Input Section
 st.write("### 1️⃣ Choose your image source")
