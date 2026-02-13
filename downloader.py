@@ -27,6 +27,99 @@ def _clean_dir(path):
             except Exception as e:
                 print(f"Error cleaning {file_path}: {e}")
 
+def _shortcode_to_mediaid(shortcode):
+    """Convert Instagram shortcode to numeric media ID."""
+    alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
+    media_id = 0
+    for char in shortcode:
+        media_id = media_id * 64 + alphabet.index(char)
+    return media_id
+
+
+def download_via_mobile_api(shortcode, target_dir, img_index=1):
+    """
+    Use Instagram's private mobile API to get post/carousel data.
+    This uses a different channel than the web embed page.
+    """
+    print(f"Attempting mobile API for {shortcode} (slide {img_index})...")
+    
+    try:
+        media_id = _shortcode_to_mediaid(shortcode)
+        api_url = f"https://i.instagram.com/api/v1/media/{media_id}/info/"
+        
+        mobile_headers = {
+            "User-Agent": "Instagram 76.0.0.15.395 Android (24/7.0; 640dpi; 1440x2560; samsung; SM-G930F; herolte; samsungexynos8890; en_US; 138226743)",
+            "X-IG-App-ID": "936619743392459",
+            "Accept": "*/*",
+            "Accept-Language": "en-US",
+            "X-IG-Capabilities": "3brTvw==",
+            "X-IG-Connection-Type": "WIFI",
+        }
+        
+        response = requests.get(api_url, headers=mobile_headers, timeout=15)
+        print(f"Mobile API status: {response.status_code}")
+        
+        if response.status_code != 200:
+            print(f"Mobile API returned {response.status_code}")
+            return None, f"Mobile API: HTTP {response.status_code}"
+        
+        data = response.json()
+        items = data.get("items", [])
+        
+        if not items:
+            print("Mobile API returned no items")
+            return None, "Mobile API: no items returned"
+        
+        item = items[0]
+        carousel_media = item.get("carousel_media", [])
+        
+        if carousel_media:
+            # Carousel post
+            total = len(carousel_media)
+            print(f"Found carousel with {total} slides via mobile API!")
+            
+            if img_index > total:
+                print(f"Requested slide {img_index} > total {total}, using last.")
+                img_index = total
+            
+            slide = carousel_media[img_index - 1]
+            candidates = slide.get("image_versions2", {}).get("candidates", [])
+        else:
+            # Single image
+            print("Single image post via mobile API")
+            candidates = item.get("image_versions2", {}).get("candidates", [])
+        
+        if not candidates:
+            print("No image candidates found")
+            return None, "Mobile API: no image data"
+        
+        # Get highest resolution
+        best = max(candidates, key=lambda c: c.get("width", 0) * c.get("height", 0))
+        image_url = best.get("url")
+        
+        if not image_url:
+            return None, "Mobile API: no image URL"
+        
+        print(f"Downloading via mobile API: {image_url[:80]}...")
+        
+        img_response = requests.get(image_url, headers=_HEADERS, timeout=15)
+        if img_response.status_code == 200:
+            output_dir = os.path.join(target_dir, shortcode)
+            _ensure_dir(output_dir)
+            filename = f"{shortcode}_slide{img_index}.jpg"
+            filepath = os.path.join(output_dir, filename)
+            with open(filepath, "wb") as f:
+                f.write(img_response.content)
+            return filepath, f"Slide {img_index} (via mobile API)"
+        else:
+            print(f"Image download failed: {img_response.status_code}")
+            return None, None
+            
+    except Exception as e:
+        print(f"Mobile API failed: {e}")
+        return None, f"Mobile API error: {e}"
+
+
 def download_via_embed_json(shortcode, target_dir, img_index=1):
     """
     Lightweight method: fetch embed page HTML with requests and parse
@@ -455,20 +548,35 @@ def download_instagram_image(post_url, target_dir="downloads", img_index=None):
     else:
         print(f"Carousel image #{img_index} requested — skipping Media Redirect & static Embed.")
 
-    # Method 3: Embed JSON (lightweight, no browser needed — parses embed HTML for carousel data)
-    print(f"Method 3: Embed JSON extraction...")
+    # Track errors for debugging
+    errors = []
+
+    # Method 3: Mobile API (lightweight, uses Instagram's private API)
+    print(f"Method 3: Mobile API...")
+    path, caption = download_via_mobile_api(shortcode, target_dir, img_index)
+    if path:
+        return os.path.abspath(path), caption
+    if caption:
+        errors.append(caption)
+
+    # Method 4: Embed JSON (parses embed HTML for carousel data)
+    print(f"Method 4: Embed JSON extraction...")
     path, caption = download_via_embed_json(shortcode, target_dir, img_index)
     if path:
         return os.path.abspath(path), caption
+    if caption:
+        errors.append(caption)
 
-    # Method 4: Playwright Embed Browser (heavy, needs browser installed)
-    print(f"Method 4: Embed Browser (Playwright)...")
+    # Method 5: Playwright Embed Browser (heavy, needs browser installed)
+    print(f"Method 5: Embed Browser (Playwright)...")
     path, caption = download_via_embed_browser(shortcode, target_dir, img_index)
     if path:
         return os.path.abspath(path), caption
+    if caption:
+        errors.append(caption)
 
-    # Method 5: Instaloader (supports carousel, but often blocked on cloud)
-    print("Method 5: Instaloader (Last Resort)...")
+    # Method 6: Instaloader (supports carousel, but often blocked on cloud)
+    print("Method 6: Instaloader (Last Resort)...")
     try:
         # Configure to fail faster
         L = instaloader.Instaloader(
@@ -529,7 +637,10 @@ def download_instagram_image(post_url, target_dir="downloads", img_index=None):
                 
     except Exception as e:
         print(f"Instaloader failed: {e}")
+        errors.append(f"Instaloader: {e}")
         
+    # All methods failed
+    error_detail = " | ".join(errors) if errors else "All methods failed"
     if img_index > 1:
-        return None, f"Carousel slide {img_index} could not be downloaded. Browser or Instaloader needed but both failed."
-    return None, "All download methods failed for this post."
+        return None, f"Slide {img_index} failed. Details: {error_detail}"
+    return None, f"Download failed. Details: {error_detail}"
