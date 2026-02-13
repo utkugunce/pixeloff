@@ -53,24 +53,32 @@ with st.sidebar:
             try:
                 import subprocess
                 import sys
-                # Remove --with-deps because it requires sudo (not available on Streamlit Cloud)
-                # Dependencies are handled via packages.txt
                 cmd = [sys.executable, "-m", "playwright", "install", "chromium"]
                 result = subprocess.run(cmd, capture_output=True, text=True)
                 if result.returncode == 0:
                     st.success("Browsers installed successfully! Please try downloading again.")
                 else:
                     st.error(f"Installation failed: {result.stderr}")
-                    st.info("Technical info for support: " + result.stdout[-500:])
             except Exception as e:
                 st.error(f"Error: {e}")
     
+    # Diagnostic Download (v1.6)
+    diag_log = os.path.join("downloads", "last_response.log")
+    if os.path.exists(diag_log) and os.path.getsize(diag_log) > 0:
+        with open(diag_log, "rb") as f:
+            st.download_button(
+                "📂 Download Diagnostic Log",
+                data=f,
+                file_name="instagram_debug_log.txt",
+                help="If it fails, download this and send it to support."
+            )
+
     if st.checkbox("🐞 Enable Debug Logs"):
         st.session_state['debug_mode'] = True
     else:
         st.session_state['debug_mode'] = False
         
-    if st.checkbox("📸 Visual Debug (Browser Screenshot)", help="Shows what the browser sees when 'Headless Browser' method runs."):
+    if st.checkbox("📸 Visual Debug (Browser Screenshot)"):
         st.session_state['visual_debug'] = True
     else:
         st.session_state['visual_debug'] = False
