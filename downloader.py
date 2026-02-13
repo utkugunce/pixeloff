@@ -79,7 +79,7 @@ def download_via_mobile_api(shortcode, target_dir, img_index=1):
     return None, None
 
 def download_via_embed_json(shortcode, target_dir, img_index=1):
-    """Method 2: Advanced Embed HTML Parsing (JSON Data Extraction)"""
+    """Method 2: Multi-Pattern Data Discovery (Resilient Scraper)"""
     print(f"Attempting embed JSON discovery for {shortcode} (slide {img_index})...")
     url = f"https://www.instagram.com/p/{shortcode}/embed/captioned/"
     try:
@@ -87,8 +87,10 @@ def download_via_embed_json(shortcode, target_dir, img_index=1):
         if res.status_code != 200: return None, f"Embed Page: HTTP {res.status_code}"
         html = res.text
         
+        # Multiple data discovery patterns
         data = None
-        # Pattern 1: contextJSON (Standard Embed)
+        
+        # Pattern 1: contextJSON (Standard Polaris Embed)
         m = re.search(r'"contextJSON"\s*:\s*"((?:[^"\\]|\\.)*)"', html)
         if m:
             s = m.group(1).replace('\\"', '"').replace('\\\\', '\\').replace('\\/', '/')
@@ -103,29 +105,42 @@ def download_via_embed_json(shortcode, target_dir, img_index=1):
                     jd = json.loads(m.group(1))
                     data = jd.get('entry_data', {}).get('PostPage', [{}])[0].get('graphql', {}).get('shortcode_media')
                 except: pass
-                
-        # Pattern 3: Scraping specific script blocks (Aggressive discovery)
+
+        # Pattern 3: __additional_data (Modern Web Fallback)
         if not data:
+            m = re.search(r'__additional_data\s*=\s*(.*?);</script>', html)
+            if m:
+                try: 
+                    jd = json.loads(m.group(1))
+                    if 'graphql' in jd: data = jd['graphql'].get('shortcode_media')
+                except: pass
+                
+        # Pattern 4 (Discovery Mode): Brute-force high-res JPG extraction
+        if not data:
+            print("Structural parsing failed. Entering Brute-Force Discovery...")
             soup = BeautifulSoup(html, 'html.parser')
+            all_jpgs = []
             for s in soup.find_all('script'):
                 if not s.string: continue
-                # Look for Slide URLs directly in the script text if JSON structure is unknown
                 urls = re.findall(r'https://[^"]+?\.jpg[^"]*', s.string)
-                if urls and "cdninstagram" in urls[0]:
-                    # If we found URLs but couldn't parse JSON, we might be able to pick the N-th unique JPG
-                    unique_urls = []
-                    for u in urls:
-                        u = u.replace('\\/', '/')
-                        if u not in unique_urls: unique_urls.append(u)
-                    if len(unique_urls) >= img_index:
-                        img_url = unique_urls[img_index-1]
-                        img_res = requests.get(img_url, headers=_HEADERS, timeout=15)
-                        if img_res.status_code == 200:
-                            output_dir = os.path.join(target_dir, shortcode)
-                            _ensure_dir(output_dir)
-                            path = os.path.join(output_dir, f"{shortcode}_slide{img_index}.jpg")
-                            with open(path, "wb") as f: f.write(img_res.content)
-                            return path, f"Slide {img_index} (Scraped)"
+                for u in urls:
+                    u = u.replace('\\/', '/')
+                    if ("/s" in u and "x" in u) or ("cdninstagram" in u):
+                        if u not in all_jpgs: all_jpgs.append(u)
+            
+            # Sort by quality markers (prefer 1080px)
+            all_jpgs.sort(key=lambda x: ("1080x1080" in x), reverse=True)
+            
+            if len(all_jpgs) >= img_index:
+                img_url = all_jpgs[img_index-1]
+                print(f"Brute-force found {len(all_jpgs)} unique images. Selecting slide {img_index}.")
+                img_res = requests.get(img_url, headers=_HEADERS, timeout=15)
+                if img_res.status_code == 200:
+                    output_dir = os.path.join(target_dir, shortcode)
+                    _ensure_dir(output_dir)
+                    path = os.path.join(output_dir, f"{shortcode}_slide{img_index}.jpg")
+                    with open(path, "wb") as f: f.write(img_res.content)
+                    return path, f"Slide {img_index} (Discovery Mode)"
 
         if data:
             slides = []
@@ -147,8 +162,8 @@ def download_via_embed_json(shortcode, target_dir, img_index=1):
                     with open(path, "wb") as f: f.write(img_res.content)
                     return path, f"Slide {img_index}/{len(slides)} (JSON)"
 
-        return None, "No data matching slide index found in HTML"
-    except Exception as e: return None, f"Embed JSON error: {e}"
+        return None, "No slide data found (Structure changed or blocked)"
+    except Exception as e: return None, f"Scraper: {e}"
 
 def download_via_embed_browser(shortcode, target_dir, img_index=1):
     """Method 3: Headless Browser (Browser Orchestration)"""

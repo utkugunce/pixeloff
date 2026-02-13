@@ -53,9 +53,9 @@ with st.sidebar:
             try:
                 import subprocess
                 import sys
-                # Use python -m playwright to ensure it's the right environment
-                # Add --with-deps for linux environments (Streamlit Cloud)
-                cmd = [sys.executable, "-m", "playwright", "install", "--with-deps", "chromium"]
+                # Remove --with-deps because it requires sudo (not available on Streamlit Cloud)
+                # Dependencies are handled via packages.txt
+                cmd = [sys.executable, "-m", "playwright", "install", "chromium"]
                 result = subprocess.run(cmd, capture_output=True, text=True)
                 if result.returncode == 0:
                     st.success("Browsers installed successfully! Please try downloading again.")
