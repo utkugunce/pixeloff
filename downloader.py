@@ -29,8 +29,8 @@ def _clean_dir(path):
 def download_via_embed_browser(shortcode, target_dir, img_index=1):
     """
     Use Playwright headless browser to render the Instagram embed page
-    and extract carousel images. Works on cloud servers where Instaloader
-    gets blocked.
+    and extract carousel images by parsing the embedded JSON data.
+    This extracts ALL slide URLs from gql_data instead of clicking buttons.
     """
     print(f"Attempting download via Embed Browser for {shortcode} (slide {img_index})...")
     try:
@@ -44,49 +44,119 @@ def download_via_embed_browser(shortcode, target_dir, img_index=1):
     try:
         with sync_playwright() as p:
             print("Launching browser...")
-            browser = p.chromium.launch(headless=True) # Ensure headless=True for cloud
+            browser = p.chromium.launch(headless=True)
             print("Browser launched. Creating page...")
             page = browser.new_page(user_agent=_HEADERS["User-Agent"])
             print(f"Navigating to {embed_url}...")
-            page.goto(embed_url, wait_until="networkidle", timeout=20000) # Increased timeout
-            print("Page loaded. Waiting 2s...")
+            page.goto(embed_url, wait_until="networkidle", timeout=30000)
+            print("Page loaded.")
             
-            # Click "Next" button (img_index - 1) times to reach the desired slide
+            # Strategy 1: Extract ALL carousel URLs from the embedded JSON data
+            # The embed page contains a PolarisEmbedSimple init script with contextJSON
+            # that has gql_data containing edge_sidecar_to_children (all slides)
+            print("Extracting carousel data from embedded JSON...")
+            carousel_urls = page.evaluate(r'''
+                () => {
+                    try {
+                        const scripts = Array.from(document.querySelectorAll('script'));
+                        for (const script of scripts) {
+                            const text = script.textContent;
+                            if (!text.includes('contextJSON')) continue;
+                            
+                            // Extract the contextJSON value
+                            const match = text.match(/"contextJSON"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+                            if (!match) continue;
+                            
+                            // Unescape the JSON string
+                            let jsonStr = match[1]
+                                .replace(/\\"/g, '"')
+                                .replace(/\\\\/g, '\\')
+                                .replace(/\\n/g, '\n')
+                                .replace(/\\t/g, '\t');
+                            
+                            const data = JSON.parse(jsonStr);
+                            
+                            if (data && data.gql_data && data.gql_data.shortcode_media) {
+                                const media = data.gql_data.shortcode_media;
+                                
+                                // Check if it's a carousel (sidecar)
+                                if (media.edge_sidecar_to_children && media.edge_sidecar_to_children.edges) {
+                                    return media.edge_sidecar_to_children.edges.map(edge => ({
+                                        url: edge.node.display_url,
+                                        is_video: edge.node.is_video || false
+                                    }));
+                                }
+                                
+                                // Single image post
+                                return [{
+                                    url: media.display_url,
+                                    is_video: media.is_video || false
+                                }];
+                            }
+                        }
+                    } catch (e) {
+                        console.error('JSON extraction error:', e);
+                    }
+                    return null;
+                }
+            ''')
+            
+            if carousel_urls and len(carousel_urls) > 0:
+                print(f"Found {len(carousel_urls)} slides via JSON extraction!")
+                
+                # Pick the requested slide
+                if img_index > len(carousel_urls):
+                    print(f"Requested slide {img_index} > total {len(carousel_urls)}, using last.")
+                    img_index = len(carousel_urls)
+                
+                target_slide = carousel_urls[img_index - 1]
+                
+                if target_slide.get('is_video'):
+                    print(f"Slide {img_index} is a video, skipping.")
+                    # Try next non-video slide or return error
+                    return None, f"Slide {img_index} is a video, not an image."
+                
+                image_url = target_slide['url']
+                print(f"Downloading slide {img_index}: {image_url[:80]}...")
+                
+                response = requests.get(image_url, headers=_HEADERS, timeout=15)
+                if response.status_code == 200:
+                    output_dir = os.path.join(target_dir, shortcode)
+                    _ensure_dir(output_dir)
+                    filename = f"{shortcode}_slide{img_index}.jpg"
+                    filepath = os.path.join(output_dir, filename)
+                    with open(filepath, "wb") as f:
+                        f.write(response.content)
+                    browser.close()
+                    return filepath, f"Slide {img_index}/{len(carousel_urls)}"
+                else:
+                    print(f"Download failed (status {response.status_code})")
+            else:
+                print("JSON extraction returned no data. Trying DOM fallback...")
+            
+            # Strategy 2 (Fallback): Click Next buttons to navigate carousel
+            print(f"Attempting button-click navigation to slide {img_index}...")
             for i in range(img_index - 1):
-                # Try different selectors for the Next button
-                # ._afxw is the class for the Next button in embed view (verified by agent)
                 next_btn = page.query_selector('button._afxw') or \
                            page.query_selector('button[aria-label="Next"]') or \
                            page.query_selector('button[aria-label="İleri"]') or \
-                           page.query_selector('div[role="button"][aria-label="Next"]') or \
-                           page.query_selector('div[role="button"][aria-label="İleri"]')
-                
+                           page.query_selector('[role="button"][aria-label="Next"]') or \
+                           page.query_selector('[role="button"][aria-label="İleri"]')
                 if next_btn:
-                    print(f"Clicking next button (step {i+1})...")
+                    print(f"Clicking next (step {i+1})...")
                     try:
-                        next_btn.click(force=True) # Force click in case of overlays
-                        page.wait_for_timeout(1000)  # Wait for slide transition
-                        # Debug: take screenshot
-                        # page.screenshot(path=os.path.join(target_dir, f"debug_slide_{i+1}.png"))
+                        next_btn.click(force=True)
+                        page.wait_for_timeout(1500)
                     except Exception as e:
-                         print(f"Error clicking next button: {e}")
+                        print(f"Click error: {e}")
+                        break
                 else:
-                    print(f"Next button not found at step {i+1}. Max slides may be reached.")
-                    # Take a screenshot to see why
-                    debug_path = os.path.join(target_dir, f"debug_failed_nav_{shortcode}.png")
-                    try:
-                        page.screenshot(path=debug_path)
-                        print(f"Saved debug screenshot to {debug_path}")
-                    except:
-                        pass
+                    print(f"Next button not found at step {i+1}.")
                     break
             
-            # Wait a bit more for high-res image to load
             page.wait_for_timeout(1000)
-
-            # Collect all large images from the DOM
             
-            # Collect all large images from the DOM
+            # Strategy 3 (Final fallback): Get visible large image from DOM
             images = page.evaluate('''
                 () => {
                     const imgs = Array.from(document.querySelectorAll('img'));
@@ -103,39 +173,32 @@ def download_via_embed_browser(shortcode, target_dir, img_index=1):
             browser.close()
             
             if not images:
-                print("No large images found in embed page.")
-                return None, None
+                print("No images found in embed page.")
+                return None, "No images found on embed page"
             
-            # Pick the best image: prefer EmbeddedMediaImage class, otherwise largest
+            # Prefer EmbeddedMediaImage, then largest
             target_img = None
             for img in images:
                 if 'EmbeddedMediaImage' in img.get('className', ''):
                     target_img = img
                     break
             if not target_img:
-                # Get the largest image
                 target_img = max(images, key=lambda x: x.get('width', 0))
             
             image_url = target_img['src']
-            print(f"Found image URL via embed browser: {image_url[:80]}...")
+            print(f"Found image via DOM: {image_url[:80]}...")
             
-            # Download the image
             response = requests.get(image_url, headers=_HEADERS, timeout=15)
-            
             if response.status_code == 200:
                 output_dir = os.path.join(target_dir, shortcode)
                 _ensure_dir(output_dir)
-                
                 filename = f"{shortcode}_slide{img_index}.jpg"
                 filepath = os.path.join(output_dir, filename)
-                
                 with open(filepath, "wb") as f:
                     f.write(response.content)
-                
-                return filepath, "Caption unavailable in embed browser mode"
-            else:
-                print(f"Failed to download image (status: {response.status_code})")
-                return None, None
+                return filepath, "Caption unavailable (DOM fallback)"
+            
+            return None, "Failed to download image"
                 
     except Exception as e:
         print(f"Embed browser download failed: {e}")
