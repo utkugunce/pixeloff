@@ -2,6 +2,7 @@ import instaloader
 import os
 import shutil
 import re
+import json
 import requests
 from urllib.parse import urlparse, parse_qs
 from bs4 import BeautifulSoup
@@ -25,6 +26,109 @@ def _clean_dir(path):
                     os.unlink(file_path)
             except Exception as e:
                 print(f"Error cleaning {file_path}: {e}")
+
+def download_via_embed_json(shortcode, target_dir, img_index=1):
+    """
+    Lightweight method: fetch embed page HTML with requests and parse
+    the contextJSON/gql_data for ALL carousel slide URLs.
+    No browser/Playwright needed.
+    """
+    print(f"Attempting embed JSON extraction for {shortcode} (slide {img_index})...")
+    embed_url = f"https://www.instagram.com/p/{shortcode}/embed/captioned/"
+    
+    try:
+        response = requests.get(embed_url, headers=_HEADERS, timeout=15)
+        if response.status_code != 200:
+            print(f"Embed page returned status {response.status_code}")
+            return None, None
+        
+        html = response.text
+        
+        # Look for contextJSON in the HTML
+        context_match = re.search(r'"contextJSON"\s*:\s*"((?:[^"\\]|\\.)*)"', html)
+        if not context_match:
+            print("No contextJSON found in embed HTML.")
+            return None, None
+        
+        # Unescape the JSON string
+        json_str = context_match.group(1)
+        json_str = json_str.replace('\\"', '"')
+        json_str = json_str.replace('\\\\', '\\')
+        json_str = json_str.replace('\\n', '\n')
+        json_str = json_str.replace('\\t', '\t')
+        json_str = json_str.replace('\\/', '/')
+        
+        data = json.loads(json_str)
+        
+        gql_data = data.get('gql_data')
+        if not gql_data:
+            print("gql_data is null — Instagram may be blocking this request.")
+            return None, None
+        
+        media = gql_data.get('shortcode_media')
+        if not media:
+            print("shortcode_media not found in gql_data.")
+            return None, None
+        
+        # Extract carousel slides
+        slides = []
+        if media.get('edge_sidecar_to_children'):
+            edges = media['edge_sidecar_to_children'].get('edges', [])
+            for edge in edges:
+                node = edge.get('node', {})
+                slides.append({
+                    'url': node.get('display_url'),
+                    'is_video': node.get('is_video', False)
+                })
+        else:
+            # Single image
+            slides.append({
+                'url': media.get('display_url'),
+                'is_video': media.get('is_video', False)
+            })
+        
+        if not slides:
+            print("No slides found in gql_data.")
+            return None, None
+        
+        print(f"Found {len(slides)} slides via embed JSON!")
+        
+        # Pick the requested slide
+        if img_index > len(slides):
+            print(f"Requested slide {img_index} > total {len(slides)}, using last.")
+            img_index = len(slides)
+        
+        target_slide = slides[img_index - 1]
+        
+        if target_slide.get('is_video'):
+            return None, f"Slide {img_index} is a video, not an image."
+        
+        image_url = target_slide.get('url')
+        if not image_url:
+            return None, None
+        
+        print(f"Downloading slide {img_index}/{len(slides)}: {image_url[:80]}...")
+        
+        img_response = requests.get(image_url, headers=_HEADERS, timeout=15)
+        if img_response.status_code == 200 and 'image' in img_response.headers.get('Content-Type', ''):
+            output_dir = os.path.join(target_dir, shortcode)
+            _ensure_dir(output_dir)
+            filename = f"{shortcode}_slide{img_index}.jpg"
+            filepath = os.path.join(output_dir, filename)
+            with open(filepath, "wb") as f:
+                f.write(img_response.content)
+            return filepath, f"Slide {img_index}/{len(slides)}"
+        else:
+            print(f"Image download failed (status {img_response.status_code})")
+            return None, None
+            
+    except json.JSONDecodeError as e:
+        print(f"JSON parse error: {e}")
+        return None, None
+    except Exception as e:
+        print(f"Embed JSON extraction failed: {e}")
+        return None, None
+
 
 def download_via_embed_browser(shortcode, target_dir, img_index=1):
     """
@@ -351,14 +455,20 @@ def download_instagram_image(post_url, target_dir="downloads", img_index=None):
     else:
         print(f"Carousel image #{img_index} requested — skipping Media Redirect & static Embed.")
 
-    # Method 3: Playwright Embed Browser (supports carousel slide selection, works on cloud)
-    print(f"Method 3: Embed Browser (Playwright)...")
+    # Method 3: Embed JSON (lightweight, no browser needed — parses embed HTML for carousel data)
+    print(f"Method 3: Embed JSON extraction...")
+    path, caption = download_via_embed_json(shortcode, target_dir, img_index)
+    if path:
+        return os.path.abspath(path), caption
+
+    # Method 4: Playwright Embed Browser (heavy, needs browser installed)
+    print(f"Method 4: Embed Browser (Playwright)...")
     path, caption = download_via_embed_browser(shortcode, target_dir, img_index)
     if path:
         return os.path.abspath(path), caption
 
-    # Method 4: Instaloader (supports carousel, but often blocked on cloud)
-    print("Method 4: Instaloader (Last Resort)...")
+    # Method 5: Instaloader (supports carousel, but often blocked on cloud)
+    print("Method 5: Instaloader (Last Resort)...")
     try:
         # Configure to fail faster
         L = instaloader.Instaloader(
