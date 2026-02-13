@@ -24,13 +24,14 @@ def remove_background(input_path, output_path=None):
 
     try:
         with open(input_path, 'rb') as i:
-            with open(output_path, 'wb') as o:
-                input_image = i.read()
-                # Use u2netp (lightweight) model to prevent OOM/Timeouts on Cloud
-                model_name = "u2netp" 
-                session = new_session(model_name)
-                output_image = remove(input_image, session=session)
-                o.write(output_image)
+            input_image = i.read()
+            
+        # Use cached session to prevent reloading model
+        session = _get_rembg_session("u2netp")
+        output_image = remove(input_image, session=session)
+        
+        with open(output_path, 'wb') as o:
+            o.write(output_image)
         
         # Verify output
         if os.path.getsize(output_path) == 0:
@@ -42,3 +43,11 @@ def remove_background(input_path, output_path=None):
     except Exception as e:
         print(f"Error removing background: {e}")
         return None, str(e)
+
+import streamlit as st
+
+@st.cache_resource(show_spinner=False)
+def _get_rembg_session(model_name):
+    # Lazy import inside cached function
+    from rembg import new_session
+    return new_session(model_name)

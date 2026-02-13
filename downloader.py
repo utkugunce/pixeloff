@@ -1,9 +1,30 @@
 import instaloader
 import os
+import shutil
 import re
 import requests
 from urllib.parse import urlparse, parse_qs
 from bs4 import BeautifulSoup
+
+# Constants
+_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+}
+
+def _ensure_dir(path):
+    """Safely create directory."""
+    os.makedirs(path, exist_ok=True)
+
+def _clean_dir(path):
+    """Clean up directory before new download to avoid stale files."""
+    if os.path.exists(path):
+        for filename in os.listdir(path):
+            file_path = os.path.join(path, filename)
+            try:
+                if os.path.isfile(file_path):
+                    os.unlink(file_path)
+            except Exception as e:
+                print(f"Error cleaning {file_path}: {e}")
 
 def download_via_embed_browser(shortcode, target_dir, img_index=1):
     """
@@ -23,9 +44,7 @@ def download_via_embed_browser(shortcode, target_dir, img_index=1):
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
-            page = browser.new_page(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            )
+            page = browser.new_page(user_agent=_HEADERS["User-Agent"])
             page.goto(embed_url, wait_until="networkidle", timeout=15000)
             page.wait_for_timeout(2000)  # Extra wait for images to load
             
@@ -77,15 +96,11 @@ def download_via_embed_browser(shortcode, target_dir, img_index=1):
             print(f"Found image URL via embed browser: {image_url[:80]}...")
             
             # Download the image
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            }
-            response = requests.get(image_url, headers=headers, timeout=15)
+            response = requests.get(image_url, headers=_HEADERS, timeout=15)
             
             if response.status_code == 200:
                 output_dir = os.path.join(target_dir, shortcode)
-                if not os.path.exists(output_dir):
-                    os.makedirs(output_dir)
+                _ensure_dir(output_dir)
                 
                 filename = f"{shortcode}_slide{img_index}.jpg"
                 filepath = os.path.join(output_dir, filename)
@@ -112,11 +127,7 @@ def download_via_media_redirect(shortcode, target_dir):
     
     try:
         # We need to act like a browser to avoid 403 on the redirect target
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-        }
-        
-        response = requests.get(url, headers=headers, timeout=10, allow_redirects=True)
+        response = requests.get(url, headers=_HEADERS, timeout=10, allow_redirects=True)
         
         # Check if we actually got an image
         if "image" not in response.headers.get("Content-Type", ""):
@@ -125,8 +136,7 @@ def download_via_media_redirect(shortcode, target_dir):
             
         # Save it
         output_dir = os.path.join(target_dir, shortcode)
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
+        _ensure_dir(output_dir)
             
         filename = f"{shortcode}_media.jpg"
         filepath = os.path.join(output_dir, filename)
@@ -153,7 +163,7 @@ def download_via_embed(shortcode, target_dir):
     }
     
     try:
-        response = requests.get(embed_url, headers=headers, timeout=10)
+        response = requests.get(embed_url, headers=_HEADERS, timeout=10)
         if response.status_code != 200:
             print(f"Embed page returned status {response.status_code}")
             return None, None
@@ -176,12 +186,11 @@ def download_via_embed(shortcode, target_dir):
             
         # Download the image
         print(f"Found image URL via embed: {image_url}")
-        img_data = requests.get(image_url, headers=headers, timeout=10).content
+        img_data = requests.get(image_url, headers=_HEADERS, timeout=10).content
         
         # Save it
         output_dir = os.path.join(target_dir, shortcode)
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
+        _ensure_dir(output_dir)
             
         filename = f"{shortcode}_embed.jpg"
         filepath = os.path.join(output_dir, filename)
@@ -230,6 +239,11 @@ def download_instagram_image(post_url, target_dir="downloads"):
     shortcode = match.group(1)
     img_index = _parse_img_index(post_url)
     print(f"Processing shortcode: {shortcode}, img_index: {img_index}")
+    
+    # Clean up target directory before downloading to avoid stale files
+    # (e.g. if previous download was slide 1 and now we want slide 2)
+    output_dir = os.path.join(target_dir, shortcode)
+    _clean_dir(output_dir)
 
     # Methods 1 & 2 (Media Redirect / Embed scraper) can only fetch the first image.
     # If user wants a specific slide (img_index > 1), skip directly to browser/Instaloader.
@@ -287,13 +301,9 @@ def download_instagram_image(post_url, target_dir="downloads"):
             
             # Download the specific slide
             output_dir = os.path.join(target_dir, shortcode)
-            if not os.path.exists(output_dir):
-                os.makedirs(output_dir)
+            _ensure_dir(output_dir)
             
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-            }
-            response = requests.get(image_url, headers=headers, timeout=15)
+            response = requests.get(image_url, headers=_HEADERS, timeout=15)
             
             if response.status_code == 200 and "image" in response.headers.get("Content-Type", ""):
                 filename = f"{shortcode}_slide{img_index}.jpg"

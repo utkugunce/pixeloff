@@ -15,9 +15,15 @@ ENV/
 
 # Downloads (Don't upload downloaded images)
 downloads/
+uploads/
 *.jpg
 *.png
 !logo.png
+
+# Test & Debug
+test_*.py
+*debug.html
+*_output.txt
 
 # IDE
 .vscode/

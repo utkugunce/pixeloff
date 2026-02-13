@@ -1,6 +1,5 @@
 import streamlit as st
 import os
-import shutil
 from downloader import download_instagram_image
 from processor import remove_background
 
@@ -59,7 +58,7 @@ if image_path:
     
     with col1:
         st.subheader("Original")
-        st.image(image_path, width="stretch")
+        st.image(image_path, use_container_width=True)
         
     with col2:
         st.subheader("No Background")
@@ -67,7 +66,7 @@ if image_path:
             processed_path, error = remove_background(image_path)
             
         if processed_path:
-            st.image(processed_path, caption="Background Removed", width="stretch")
+            st.image(processed_path, caption="Background Removed", use_container_width=True)
             
             with open(processed_path, "rb") as file:
                 st.download_button(
