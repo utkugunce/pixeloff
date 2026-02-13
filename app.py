@@ -49,18 +49,27 @@ with st.sidebar:
         st.success("Cache cleared!")
 
     if st.button("🌐 Install Playwright Browsers", help="Use if you see 'Executable doesn't exist' error. This downloads Chromium."):
-        with st.spinner("Installing browsers (this may take 2-3 minutes)..."):
+        with st.spinner("Installing browsers (this may take 2-4 minutes)..."):
             try:
                 import subprocess
-                # Install only chromium to save space and time
-                result = subprocess.run(["playwright", "install", "chromium"], capture_output=True, text=True)
+                import sys
+                # Use python -m playwright to ensure it's the right environment
+                # Add --with-deps for linux environments (Streamlit Cloud)
+                cmd = [sys.executable, "-m", "playwright", "install", "--with-deps", "chromium"]
+                result = subprocess.run(cmd, capture_output=True, text=True)
                 if result.returncode == 0:
-                    st.success("Browsers installed successfully!")
+                    st.success("Browsers installed successfully! Please try downloading again.")
                 else:
                     st.error(f"Installation failed: {result.stderr}")
+                    st.info("Technical info for support: " + result.stdout[-500:])
             except Exception as e:
                 st.error(f"Error: {e}")
     
+    if st.checkbox("🐞 Enable Debug Logs"):
+        st.session_state['debug_mode'] = True
+    else:
+        st.session_state['debug_mode'] = False
+
     st.info("If you see 'Connection Reset' or a black screen, please **refresh the page** (F5).")
 
 # Main Imports (wrapped to catch startup errors)
@@ -80,7 +89,7 @@ url = st.text_input("Paste Instagram Post URL:", placeholder="https://www.instag
 # Carousel slide selector
 slide_num = st.number_input(
     "📸 Carousel slide number (1 = first photo)",
-    min_value=1, max_value=50, value=1, step=1,
+    min_value=1, max_value=100, value=1, step=1,
     help="If the post is a carousel, choose which slide to download (e.g. 6)."
 )
 
@@ -105,6 +114,9 @@ if st.button("Download & Process", type="primary"):
                     error_msg = caption if caption else "Unknown error"
                     status.update(label="Download failed!", state="error", expanded=False)
                     st.error(f"Download failed: {error_msg}")
+                    
+                    if st.session_state.get('debug_mode'):
+                        st.expander("Show detailed error logs").write(error_msg)
                 else:
                     status.update(label="Download complete!", state="complete", expanded=False)
             except Exception as e:
