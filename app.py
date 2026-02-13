@@ -202,9 +202,27 @@ if url:
         elif not st.session_state.get('last_image'):
             st.info("Waiting for browser to capture screenshot...")
 
+    # 429 Guidance with Countdown (v2.0)
     last_err = st.session_state.get('last_error', '')
-    if last_err and "429" in last_err:
-        st.warning("⚠️ **Instagram Rate Limit (429)**. Waiting 60s and refreshing (F5) is recommended.")
+    if not st.session_state.get('last_image') and "429" in last_err:
+        import time
+        if 'rate_limit_start' not in st.session_state:
+            st.session_state['rate_limit_start'] = time.time()
+        
+        elapsed = time.time() - st.session_state['rate_limit_start']
+        remaining = int(60 - elapsed)
+        
+        if remaining > 0:
+            st.warning(f"⚠️ **Instagram Rate Limit (429)**. Server block detected. Please wait **{remaining}s** before refreshing (F5).")
+            time.sleep(1)
+            st.rerun()
+        else:
+            st.success("✅ **Cooldown complete!** You can now refresh (F5) and try again.")
+            if st.button("🔄 Try Again Now"):
+                st.session_state.pop('rate_limit_start', None)
+                st.rerun()
+    elif not st.session_state.get('last_image') and last_err:
+        st.info("💡 **Tip**: If it keeps failing, try a different slide number or wait a few minutes. Check the 'Troubleshooting' sidebar for more tools.")
 
 # Result Section
 image_path = st.session_state.get('last_image')
