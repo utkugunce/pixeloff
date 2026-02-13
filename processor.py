@@ -1,10 +1,11 @@
 from PIL import Image
 import os
 
-def remove_background(input_path, output_path=None):
+def remove_background(input_path, output_path=None, model_name="isnet-general-use"):
     """
     Removes the background from the image at input_path.
     Saves the result to output_path.
+    model_name: "isnet-general-use" (default, high quality) or "u2net_human_seg" (human focus).
     """
     # Lazy import to prevent app startup lag/timeout
     try:
@@ -20,15 +21,14 @@ def remove_background(input_path, output_path=None):
         output_path = os.path.join(directory, new_name)
 
     print(f"Processing image: {input_path}")
-    print("Removing background... Using IS-Net model (high quality).")
+    print(f"Removing background... Using model: {model_name}")
 
     try:
         with open(input_path, 'rb') as i:
             input_image = i.read()
             
         # Use cached session to prevent reloading model
-        # 'isnet-general-use' is significantly better than u2netp
-        session = _get_rembg_session("isnet-general-use")
+        session = _get_rembg_session(model_name)
         output_image = remove(input_image, session=session)
         
         with open(output_path, 'wb') as o:

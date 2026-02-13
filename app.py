@@ -26,6 +26,15 @@ slide_num = st.number_input(
     help="If the post is a carousel (multiple photos), choose which slide to download."
 )
 
+# Model Selection
+mode = st.radio(
+    "⚙️ Processing Mode",
+    ["High Quality (Default)", "Human Focus"],
+    help="High Quality: Best for edges/hair (IS-Net).\nHuman Focus: Best for isolating people from complex backgrounds (u2net_human_seg)."
+)
+
+model_name = "isnet-general-use" if mode == "High Quality (Default)" else "u2net_human_seg"
+
 if st.button("Download & Process", type="primary"):
     if not url:
         st.error("Please enter a valid URL.")
@@ -70,11 +79,11 @@ if image_path:
         
     with col2:
         st.subheader("No Background")
-        with st.spinner("Removing background... (high quality model)"):
-            processed_path, error = remove_background(image_path)
+        with st.spinner(f"Removing background... ({mode})"):
+            processed_path, error = remove_background(image_path, model_name=model_name)
             
         if processed_path:
-            st.image(processed_path, caption="Background Removed", width="stretch")
+            st.image(processed_path, caption=f"Background Removed ({mode})", width="stretch")
             
             with open(processed_path, "rb") as file:
                 st.download_button(
