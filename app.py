@@ -45,6 +45,26 @@ def check_dependencies():
 # Sidebar Title
 st.sidebar.title("🛠️ Troubleshooting")
 
+# Chromium Check (v1.9)
+def is_chromium_installed():
+    try:
+        import subprocess
+        import sys
+        cmd = [sys.executable, "-m", "playwright", "install", "--dry-run"]
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        return "chromium" in res.stdout.lower()
+    except: return False
+
+if not is_chromium_installed():
+    st.sidebar.error("⚠️ Chromium Browser Missing")
+    if st.sidebar.button("🔧 Fix Browser (Install Chromium)"):
+        with st.spinner("Installing... (2-4 mins)"):
+            try:
+                import sys
+                subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"])
+                st.sidebar.success("Installed! Refresh (F5) and retry.")
+            except Exception as e: st.sidebar.error(f"Failed: {e}")
+
 # 📂 Diagnostic Download (Always Visible in v1.8)
 diag_log = os.path.join("downloads", "last_response.log")
 if os.path.exists(diag_log) and os.path.getsize(diag_log) > 0:
@@ -150,25 +170,25 @@ if st.button("Download & Process", type="primary"):
     if not url:
         st.error("Please enter a valid URL.")
     else:
-        with st.status("Processing...", expanded=True) as status:
-            st.write("📥 Connecting to Instagram...")
+        with st.status("Processing v1.9 (Bulletproof Mode)...", expanded=True) as status:
+            st.write("🛰️ **Trying Mobile API Path...** (Domain: i.instagram.com)")
             try:
                 from downloader import download_instagram_image
                 image_path, caption = download_instagram_image(url, img_index=slide_num)
                 if not image_path:
                     error_msg = caption if caption else "Unknown error"
                     st.session_state['last_error'] = error_msg
-                    status.update(label="Download failed!", state="error", expanded=False)
+                    status.update(label="Extraction failed across all routes.", state="error", expanded=False)
                     st.error(f"Download failed: {error_msg}")
                     
                     if st.session_state.get('debug_mode'):
                         st.expander("Show detailed error logs").write(error_msg)
                 else:
-                    status.update(label="Download complete!", state="complete", expanded=False)
+                    status.update(label="Found matching slide!", state="complete", expanded=False)
                     st.session_state['last_image'] = image_path
                     st.session_state['last_error'] = ""
             except Exception as e:
-                status.update(label="Error", state="error")
+                status.update(label="Critical System Error", state="error")
                 st.error(f"Error: {e}")
 
 # Universal Debug Section
