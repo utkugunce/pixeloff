@@ -13,6 +13,21 @@ st.set_page_config(
 st.title("✨ PixelOff")
 st.markdown("Instagram fotoğraflarını indir, arkaplanını **PixelOff** ile saniyeler içinde temizle!")
 
+# Auto-install Playwright browsers (Cloud fix)
+@st.cache_resource
+def install_playwright_browsers():
+    print("Checking Playwright browsers...")
+    import subprocess
+    try:
+        # Install only chromium to save space/time
+        subprocess.run(["playwright", "install", "chromium"], check=True)
+        print("Playwright browsers installed successfully.")
+    except Exception as e:
+        print(f"Error installing Playwright browsers: {e}")
+
+# Run installation once
+install_playwright_browsers()
+
 # Input Section
 st.write("### 1️⃣ Choose your image source")
 tab1, tab2 = st.tabs(["🔗 Instagram URL", "📁 Upload Image"])
