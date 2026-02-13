@@ -145,6 +145,7 @@ if st.button("Download & Process", type="primary"):
                 image_path, caption = download_instagram_image(url, img_index=slide_num)
                 if not image_path:
                     error_msg = caption if caption else "Unknown error"
+                    st.session_state['last_error'] = error_msg
                     status.update(label="Download failed!", state="error", expanded=False)
                     st.error(f"Download failed: {error_msg}")
                     
@@ -156,33 +157,40 @@ if st.button("Download & Process", type="primary"):
                 status.update(label="Error", state="error")
                 st.error(f"Error: {e}")
 
-# Processing Section
-if image_path:
+# Universal Debug Section (Always visible after an attempt)
+if url:
     st.divider()
-    
     # Display Visual Debug Screenshot if enabled
     if st.session_state.get('visual_debug'):
         debug_shot = os.path.join("downloads", "debug_last_browser.png")
         if os.path.exists(debug_shot):
             with st.expander("📸 Visual Debug (Browser Screenshot)", expanded=True):
                 st.image(debug_shot, caption="What the browser saw during extraction")
-    
+        elif not image_path:
+            st.info("No screenshot available yet. The browser method may have been skipped or failed early.")
+
+    # 429 Guidance
+    last_err = st.session_state.get('last_error', '')
+    if not image_path and "429" in last_err:
+        st.warning("⚠️ **Instagram Rate Limit Detected (429)**. The server is temporarily blocking requests from this IP. Please wait about 60 seconds before trying again.")
+    elif not image_path and last_err:
+        st.info("💡 **Tip**: If it keeps failing, try a different slide number or wait a few minutes. Instagram's security can be sensitive.")
+
+# Result Section
+if image_path:
+    st.divider()
     st.write("### 2️⃣ Result")
-    
     col1, col2 = st.columns(2)
-    
     with col1:
         st.subheader("Original")
-        st.image(image_path, width="stretch")
-        
+        st.image(image_path, use_container_width=True)
     with col2:
         st.subheader("No Background")
         with st.spinner(f"Removing background... ({mode})"):
+            from processor import remove_background
             processed_path, error = remove_background(image_path, model_name=model_name)
-            
         if processed_path:
-            st.image(processed_path, caption=f"Result ({mode})", width="stretch")
-            
+            st.image(processed_path, caption=f"Result ({mode})", use_container_width=True)
             with open(processed_path, "rb") as file:
                 st.download_button(
                     label="⬇️ Download Processed Image",
