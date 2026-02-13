@@ -1,4 +1,4 @@
-import instaloader
+# import instaloader (Moved to lazy import)
 import os
 import shutil
 import re
@@ -435,10 +435,78 @@ def download_via_media_redirect(shortcode, target_dir):
             f.write(response.content)
             
         return filepath, "Caption unavailable in media mode"
-        
+
     except Exception as e:
         print(f"Media redirect failed: {e}")
         return None, None
+
+def download_via_instaloader(shortcode, target_dir, img_index):
+    """
+    Download via instaloader library.
+    """
+    import instaloader
+    print("Method: Instaloader...")
+    try:
+        # Configure to fail faster
+        L = instaloader.Instaloader(
+            download_pictures=True,
+            download_videos=False,
+            download_video_thumbnails=False,
+            download_geotags=False,
+            download_comments=False,
+            save_metadata=False,
+            compress_json=False,
+            max_connection_attempts=1, # Fail fast
+            request_timeout=5,
+        )
+        post = instaloader.Post.from_shortcode(L.context, shortcode)
+
+        # Handle carousel (sidecar) posts with specific img_index
+        if post.typename == 'GraphSidecar' and img_index >= 1:
+            sidecar_nodes = list(post.get_sidecar_nodes())
+            total_slides = len(sidecar_nodes)
+
+            if img_index > total_slides:
+                print(f"Warning: img_index={img_index} exceeds total slides ({total_slides}). Using last slide.")
+                img_index = total_slides
+
+            target_node = sidecar_nodes[img_index - 1]  # Convert 1-based to 0-based
+            image_url = target_node.display_url
+
+            print(f"Downloading carousel slide {img_index}/{total_slides}...")
+
+            # Download the specific slide
+            output_dir = os.path.join(target_dir, shortcode)
+            _ensure_dir(output_dir)
+
+            response = requests.get(image_url, headers=_HEADERS, timeout=15)
+
+            if response.status_code == 200 and "image" in response.headers.get("Content-Type", ""):
+                filename = f"{shortcode}_slide{img_index}.jpg"
+                filepath = os.path.join(output_dir, filename)
+                with open(filepath, "wb") as f:
+                    f.write(response.content)
+                return os.path.abspath(filepath), post.caption or "Caption downloaded"
+            else:
+                print(f"Failed to download slide image (status: {response.status_code})")
+        else:
+            # Single image post or img_index=1: download normally
+            L.download_post(post, target=shortcode)
+
+            # Find local file
+            search_dir = shortcode
+            if not os.path.exists(search_dir):
+                 search_dir = os.path.join(target_dir, shortcode)
+
+            if os.path.exists(search_dir):
+                files = [f for f in os.listdir(search_dir) if f.endswith('.jpg')]
+                if files:
+                    files.sort()
+                    return os.path.abspath(os.path.join(search_dir, files[0])), "Caption downloaded"
+
+    except Exception as e:
+        print(f"Instaloader failed: {e}")
+    return None, f"Instaloader Error: {e}"
 
 def download_via_embed(shortcode, target_dir):
     """
@@ -447,7 +515,7 @@ def download_via_embed(shortcode, target_dir):
     """
     print(f"Attempting download via Embed for {shortcode}...")
     embed_url = f"https://www.instagram.com/p/{shortcode}/embed/captioned/"
-    
+
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
     }
@@ -584,6 +652,7 @@ def download_instagram_image(post_url, target_dir="downloads", img_index=None):
     # Method 6: Instaloader (supports carousel, but often blocked on cloud)
     print("Method 6: Instaloader (Last Resort)...")
     try:
+        import instaloader
         # Configure to fail faster
         L = instaloader.Instaloader(
             download_pictures=True,

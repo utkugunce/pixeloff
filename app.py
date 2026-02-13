@@ -1,7 +1,5 @@
 import streamlit as st
 import os
-from downloader import download_instagram_image
-from processor import remove_background
 
 # Configure the page
 st.set_page_config(
@@ -10,17 +8,54 @@ st.set_page_config(
     layout="centered"
 )
 
+# Robust Dependency Check
+def check_dependencies():
+    results = {}
+    try:
+        import PIL
+        results["Pillow"] = "✅"
+    except: results["Pillow"] = "❌"
+    
+    try:
+        import rembg
+        results["rembg"] = "✅"
+    except Exception as e: 
+        results["rembg"] = f"❌ ({str(e)})"
+    
+    try:
+        import onnxruntime
+        results["onnx"] = "✅"
+    except Exception as e: 
+        results["onnx"] = f"❌ ({str(e)})"
+        
+    return results
+
 st.title("✨ PixelOff")
 st.markdown("Instagram fotoğraflarını indir, arkaplanını **PixelOff** ile saniyeler içinde temizle!")
 
 # Sidebar Troubleshooting
 with st.sidebar:
     st.header("🛠️ Troubleshooting")
+    
+    # System Check
+    if st.checkbox("🔍 System Check"):
+        deps = check_dependencies()
+        for k, v in deps.items():
+            st.write(f"**{k}**: {v}")
+            
     if st.button("♻️ Clear Model Cache", help="Clears loaded models from memory. Use if the app feels slow or crashes."):
         st.cache_resource.clear()
         st.success("Cache cleared! Models will reload on next use.")
     
     st.info("If you see 'Connection Reset' or a black screen, please **refresh the page** (F5). This usually solves memory-related issues when switching between high-quality models.")
+
+# Main Imports (wrapped to catch startup errors)
+try:
+    from downloader import download_instagram_image
+    from processor import remove_background
+except Exception as e:
+    st.error(f"⚠️ Critical Startup Error: {e}")
+    st.stop()
 
 image_path = None
 
@@ -56,8 +91,6 @@ if st.button("Download & Process", type="primary"):
                     error_msg = caption if caption else "Unknown error"
                     status.update(label="Download failed!", state="error", expanded=False)
                     st.error(f"Download failed: {error_msg}")
-                    if slide_num > 1:
-                        st.info("💡 **Tip**: Carousel downloads can be tricky. Try another slide or post.")
                 else:
                     status.update(label="Download complete!", state="complete", expanded=False)
             except Exception as e:
@@ -78,7 +111,6 @@ if image_path:
     with col2:
         st.subheader("No Background")
         with st.spinner(f"Removing background... ({mode})"):
-            # isnet-general-use / u2net_human_seg
             processed_path, error = remove_background(image_path, model_name=model_name)
             
         if processed_path:
