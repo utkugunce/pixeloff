@@ -170,8 +170,8 @@ if st.button("Download & Process", type="primary"):
     if not url:
         st.error("Please enter a valid URL.")
     else:
-        with st.status("Processing v1.9 (Bulletproof Mode)...", expanded=True) as status:
-            st.write("🛰️ **Trying Mobile API Path...** (Domain: i.instagram.com)")
+        with st.status("Processing v2.1 (Kesin Çözüm: Crawler Mode)...", expanded=True) as status:
+            st.write("🤖 **Mimicking GoogleBot...** (Bypassing IP Block)")
             try:
                 from downloader import download_instagram_image
                 image_path, caption = download_instagram_image(url, img_index=slide_num)
@@ -202,8 +202,13 @@ if url:
         elif not st.session_state.get('last_image'):
             st.info("Waiting for browser to capture screenshot...")
 
-    # 429 Guidance with Countdown (v2.0)
+    # 429 Guidance with Countdown (v2.1)
     last_err = st.session_state.get('last_error', '')
+    
+    # Sidebar IP Status Indicator
+    ip_status = "🟢 Healthy" if "429" not in last_err else "🔴 Flagged (429)"
+    st.sidebar.metric("Streamlit IP Status", ip_status, help="Green: Normal IPs. Red: Instagram is rate-limiting this server. Use Crawler Mode or wait.")
+
     if not st.session_state.get('last_image') and "429" in last_err:
         import time
         if 'rate_limit_start' not in st.session_state:
@@ -214,6 +219,8 @@ if url:
         
         if remaining > 0:
             st.warning(f"⚠️ **Instagram Rate Limit (429)**. Server block detected. Please wait **{remaining}s** before refreshing (F5).")
+            # Pro Tip for 2.1
+            st.info("💡 **v2.1 Crawler Mode** is now active. If this fails, the IP block is deep. Wait 60s and try a different link.")
             time.sleep(1)
             st.rerun()
         else:
