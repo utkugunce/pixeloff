@@ -251,14 +251,16 @@ if image_path and os.path.exists(image_path):
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("Original")
-        st.image(image_path, use_container_width=True)
+        # Fixed deprecation warning
+        st.image(image_path, width="stretch")
     with col2:
         st.subheader("No Background")
         with st.spinner(f"Removing background..."):
             from processor import remove_background
             processed_path, error = remove_background(image_path, model_name=model_name)
         if processed_path:
-            st.image(processed_path, caption="Result", use_container_width=True)
+            # Fixed deprecation warning
+            st.image(processed_path, caption="Result", width="stretch")
             with open(processed_path, "rb") as file:
                 st.download_button(
                     label="⬇️ Download Processed Image",
