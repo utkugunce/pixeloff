@@ -44,6 +44,7 @@ def check_dependencies():
 
 # Sidebar Title
 st.sidebar.title("🛠️ Troubleshooting")
+model_info_placeholder = st.sidebar.empty()
 
 # Chromium Check (v1.9)
 def is_chromium_installed():
@@ -64,6 +65,18 @@ if not is_chromium_installed():
                 subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"])
                 st.sidebar.success("Installed! Refresh (F5) and retry.")
             except Exception as e: st.sidebar.error(f"Failed: {e}")
+
+# ... (Existing Code)
+
+# Model Selection
+mode = st.radio(
+    "⚙️ Processing Mode",
+    ["High Quality (Default)", "Human Focus"],
+    help="High Quality: Best for edges/hair.\nHuman Focus: Best for people."
+)
+
+model_name = "isnet-general-use" if mode == "High Quality (Default)" else "u2net_human_seg"
+model_info_placeholder.caption(f"🤖 **Active Model:** `{model_name}`")
 
 # 📂 Diagnostic Download (Always Visible in v1.8)
 diag_log = os.path.join("downloads", "last_response.log")
