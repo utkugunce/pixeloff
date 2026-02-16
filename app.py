@@ -44,7 +44,8 @@ def check_dependencies():
 
 # Sidebar Title
 st.sidebar.title("🛠️ Troubleshooting")
-st.sidebar.info("**Version:** v2.3 \"HD Restorasyon\"")
+st.sidebar.info("**Version:** v3.0 \"Kesin Çözüm: Relay\"")
+st.sidebar.success("🛡️ **Relay Protection Active**\n(Bypassing IP Bans via Proxy)")
 model_info_placeholder = st.sidebar.empty()
 
 # Chromium Check (v1.9)

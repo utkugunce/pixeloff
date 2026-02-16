@@ -58,6 +58,14 @@ def _shortcode_to_mediaid(shortcode):
         media_id = media_id * 64 + alphabet.index(char)
     return media_id
 
+def _clean_instagram_url(url):
+    """Refine URL to get better quality if possible."""
+    # Remove resizing (/s640x640/, /p320x320/)
+    url = re.sub(r'/[sp]\d+x\d+/', '/', url)
+    # Remove cropping (/c0.134.1080.1080/)
+    url = re.sub(r'/c\d+\.\d+\.\d+\.\d+/', '/', url)
+    return url
+
 def download_via_crawler(url, shortcode, target_dir, img_index=1):
     """Method 1: Crawler Mimic (v2.2 Single Post Optimized)"""
     headers = {
@@ -93,17 +101,23 @@ def download_via_crawler(url, shortcode, target_dir, img_index=1):
                 except: pass
 
             # Fallback 1: OG Image (Standard)
-            # v2.3: Skip if it looks like a thumbnail (s150x150, p320x320, etc.)
+            # v2.3 Fix: Clean the URL to remove cropping/resizing
             og_img = re.search(r'<meta property="og:image" content="(.*?)"', html)
             if og_img and img_index == 1:
-                img_url = og_img.group(1).replace("&amp;", "&")
-                if "/s150x150/" not in img_url and "/p320x320/" not in img_url:
-                    ir = session.get(img_url, headers=_HEADERS, timeout=15)
-                    if ir.status_code == 200:
-                        path = os.path.join(os.path.join(target_dir, shortcode), f"{shortcode}_slide{img_index}.jpg")
-                        _ensure_dir(os.path.dirname(path))
-                        with open(path, "wb") as f: f.write(ir.content)
-                        return path, "Single Post (OG-Meta)"
+                raw_url = og_img.group(1).replace("&amp;", "&")
+                img_url = _clean_instagram_url(raw_url)
+                
+                # Try cleaned URL first
+                ir = session.get(img_url, headers=_HEADERS, timeout=15)
+                if ir.status_code != 200:
+                    # Fallback to raw URL if cleaning broke the signature
+                    ir = session.get(raw_url, headers=_HEADERS, timeout=15)
+                    
+                if ir.status_code == 200:
+                    path = os.path.join(os.path.join(target_dir, shortcode), f"{shortcode}_slide{img_index}.jpg")
+                    _ensure_dir(os.path.dirname(path))
+                    with open(path, "wb") as f: f.write(ir.content)
+                    return path, "Single Post (OG-Meta cleaned)"
             
             # Fallback 2: Twitter Image
             tw_img = re.search(r'<meta name="twitter:image" content="(.*?)"', html)
@@ -298,6 +312,77 @@ def download_via_embed_browser(shortcode, target_dir, img_index=1):
             return None, "Browser: Not found"
     except Exception as e: return None, f"Browser: {e}"
 
+def download_via_relay(url, shortcode, target_dir, img_index=1):
+    """Method 3: Third-Party Relay (SnapInsta/Indown via Playwright)"""
+    # v3.0: Bypass IP Ban by using public downloader services as a proxy
+    try:
+        from playwright.sync_api import sync_playwright
+        
+        with sync_playwright() as p:
+            # Launch browser (headless)
+            try: browser = p.chromium.launch(headless=True)
+            except: return None, "Relay: Browser Launch Failed"
+            
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+            )
+            page = context.new_page()
+            
+            # 1. Try SnapInsta
+            try:
+                page.goto("https://snapinsta.app/", timeout=15000)
+                page.fill('input[name="url"]', url)
+                # Click logic refined
+                page.click('.btn-get')
+                
+                # Wait for result
+                try: page.wait_for_selector('.download-bottom a', timeout=10000)
+                except: pass
+
+                download_link = page.get_attribute('.download-bottom a', 'href')
+                
+                if download_link:
+                    # Download content from the CDN link
+                    ir = requests.get(download_link, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
+                    if ir.status_code == 200:
+                        path = os.path.join(os.path.join(target_dir, shortcode), f"{shortcode}_slide{img_index}_relay.jpg")
+                        _ensure_dir(os.path.dirname(path))
+                        with open(path, "wb") as f: f.write(ir.content)
+                        browser.close()
+                        return path, "Relay Mode (SnapInsta)"
+            except Exception as e:
+                pass # Try next relay
+
+            # 2. Try Indown.io (Fallback)
+            try:
+                page.goto("https://indown.io/", timeout=15000)
+                page.fill('input#link', url)
+                page.click('#get')
+                
+                try: page.wait_for_selector('#result', timeout=15000)
+                except: pass
+
+                # Indown often puts the link in a button with class .btn-download
+                # We need to find the correct one for image
+                download_link = page.get_attribute('a.btn-download', 'href') 
+                
+                if download_link:
+                     ir = requests.get(download_link, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
+                     if ir.status_code == 200:
+                        path = os.path.join(os.path.join(target_dir, shortcode), f"{shortcode}_slide{img_index}_relay.jpg")
+                        _ensure_dir(os.path.dirname(path))
+                        with open(path, "wb") as f: f.write(ir.content)
+                        browser.close()
+                        return path, "Relay Mode (Indown)"
+            except Exception as e:
+                pass
+
+            browser.close()
+            return None, "Relay: All services failed"
+
+    except Exception as e:
+        return None, f"Relay Error: {e}"
+
 def download_via_instaloader(shortcode, target_dir, img_index=1):
     try:
         import instaloader
@@ -326,6 +411,7 @@ def download_instagram_image(url, target_dir="downloads", img_index=1):
 
     methods = [
         (lambda: download_via_crawler(url, shortcode, target_dir, img_index), "Single Post Mode"),
+        (lambda: download_via_relay(url, shortcode, target_dir, img_index), "Relay Mode (v3.0)"),
         (lambda: download_via_oembed(url, shortcode, target_dir, img_index), "OEmbed"),
         (lambda: download_via_mobile_api(shortcode, target_dir, img_index), "Mobile API"),
         (lambda: download_via_polaris_api(shortcode, target_dir, img_index), "Polaris API"),
