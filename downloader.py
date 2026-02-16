@@ -144,7 +144,12 @@ def download_via_oembed(url, shortcode, target_dir, img_index=1):
             data = res.json()
             img_url = data.get("thumbnail_url")
             if img_url and img_index == 1:
-                ir = session.get(img_url, headers=_HEADERS, timeout=15)
+                # v2.3 Fix: Try High Res first
+                clean_url = _clean_instagram_url(img_url)
+                ir = session.get(clean_url, headers=_HEADERS, timeout=15)
+                if ir.status_code != 200:
+                    ir = session.get(img_url, headers=_HEADERS, timeout=15)
+                
                 if ir.status_code == 200:
                     path = os.path.join(os.path.join(target_dir, shortcode), f"{shortcode}_slide{img_index}.jpg")
                     _ensure_dir(os.path.dirname(path))
@@ -180,7 +185,12 @@ def download_via_mobile_api(shortcode, target_dir, img_index=1):
                     if cands: slides.append(cands[0]["url"])
                 
                 if slides and len(slides) >= img_index:
-                    ir = session.get(slides[img_index-1], headers=_HEADERS, timeout=15)
+                    raw_url = slides[img_index-1]
+                    clean_url = _clean_instagram_url(raw_url)
+                    
+                    ir = session.get(clean_url, headers=_HEADERS, timeout=15)
+                    if ir.status_code != 200: ir = session.get(raw_url, headers=_HEADERS, timeout=15)
+                    
                     if ir.status_code == 200:
                         path = os.path.join(os.path.join(target_dir, shortcode), f"{shortcode}_slide{img_index}.jpg")
                         _ensure_dir(os.path.dirname(path))
@@ -214,7 +224,12 @@ def download_via_polaris_api(shortcode, target_dir, img_index=1):
                     if cands: slides.append(cands[0]["url"])
                 
                 if slides and len(slides) >= img_index:
-                    ir = session.get(slides[img_index-1], headers=_HEADERS, timeout=15)
+                    raw_url = slides[img_index-1]
+                    clean_url = _clean_instagram_url(raw_url)
+                    
+                    ir = session.get(clean_url, headers=_HEADERS, timeout=15)
+                    if ir.status_code != 200: ir = session.get(raw_url, headers=_HEADERS, timeout=15)
+
                     if ir.status_code == 200:
                         path = os.path.join(os.path.join(target_dir, shortcode), f"{shortcode}_slide{img_index}.jpg")
                         _ensure_dir(os.path.dirname(path))
@@ -267,7 +282,12 @@ def download_via_embed_json(shortcode, target_dir, img_index=1):
                         edges = media.get("edge_sidecar_to_children", {}).get("edges", [])
                         slides = [e["node"]["display_url"] for e in edges] if edges else [media.get("display_url")]
                         if len(slides) >= img_index:
-                            ir = session.get(slides[img_index-1], headers=_HEADERS, timeout=15)
+                            raw_url = slides[img_index-1]
+                            clean_url = _clean_instagram_url(raw_url)
+                            
+                            ir = session.get(clean_url, headers=_HEADERS, timeout=15)
+                            if ir.status_code != 200: ir = session.get(raw_url, headers=_HEADERS, timeout=15)
+
                             if ir.status_code == 200:
                                 path = os.path.join(os.path.join(target_dir, shortcode), f"{shortcode}_slide{img_index}.jpg")
                                 _ensure_dir(os.path.dirname(path))
@@ -343,9 +363,12 @@ def download_via_relay(url, shortcode, target_dir, img_index=1):
                 
                 if download_link:
                     # Clean the URL to remove potential resizing
-                    download_link = _clean_instagram_url(download_link)
-                    # Download content from the CDN link
-                    ir = requests.get(download_link, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
+                    clean_link = _clean_instagram_url(download_link)
+                    # Try clean first, then raw
+                    ir = requests.get(clean_link, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
+                    if ir.status_code != 200:
+                        ir = requests.get(download_link, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
+                        
                     if ir.status_code == 200:
                         path = os.path.join(os.path.join(target_dir, shortcode), f"{shortcode}_slide{img_index}_relay.jpg")
                         _ensure_dir(os.path.dirname(path))
@@ -370,8 +393,11 @@ def download_via_relay(url, shortcode, target_dir, img_index=1):
                 
                 if download_link:
                      # Clean the URL to remove potential resizing
-                     download_link = _clean_instagram_url(download_link)
-                     ir = requests.get(download_link, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
+                     clean_link = _clean_instagram_url(download_link)
+                     ir = requests.get(clean_link, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
+                     if ir.status_code != 200:
+                        ir = requests.get(download_link, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
+
                      if ir.status_code == 200:
                         path = os.path.join(os.path.join(target_dir, shortcode), f"{shortcode}_slide{img_index}_relay.jpg")
                         _ensure_dir(os.path.dirname(path))
