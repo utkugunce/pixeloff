@@ -357,12 +357,16 @@ def download_via_relay(url, shortcode, target_dir, img_index=1):
         from playwright.sync_api import sync_playwright
         
         with sync_playwright() as p:
-            # Launch browser (headless)
-            try: browser = p.chromium.launch(headless=True)
+            # Launch browser (headless) with stealth args
+            try: 
+                browser = p.chromium.launch(
+                    headless=True,
+                    args=['--disable-blink-features=AutomationControlled']
+                )
             except: return None, "Relay: Browser Launch Failed"
             
             context = browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             )
             page = context.new_page()
             
