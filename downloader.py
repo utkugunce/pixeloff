@@ -342,6 +342,8 @@ def download_via_relay(url, shortcode, target_dir, img_index=1):
                 download_link = page.get_attribute('.download-bottom a', 'href')
                 
                 if download_link:
+                    # Clean the URL to remove potential resizing
+                    download_link = _clean_instagram_url(download_link)
                     # Download content from the CDN link
                     ir = requests.get(download_link, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
                     if ir.status_code == 200:
@@ -367,6 +369,8 @@ def download_via_relay(url, shortcode, target_dir, img_index=1):
                 download_link = page.get_attribute('a.btn-download', 'href') 
                 
                 if download_link:
+                     # Clean the URL to remove potential resizing
+                     download_link = _clean_instagram_url(download_link)
                      ir = requests.get(download_link, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
                      if ir.status_code == 200:
                         path = os.path.join(os.path.join(target_dir, shortcode), f"{shortcode}_slide{img_index}_relay.jpg")
