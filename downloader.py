@@ -182,8 +182,8 @@ def download_via_mobile_api(shortcode, target_dir, img_index=1):
     api_url = f"https://i.instagram.com/api/v1/media/{media_id}/info/"
     
     headers = _HEADERS.copy()
-    headers["User-Agent"] = "Instagram 311.0.0.32.118 Android (30/11; 480dpi; 1080x2280; samsung; SM-G973F; beyond1; exynos9820; en_US; 542718151)"
-    headers["X-IG-App-ID"] = "1217981644879628"
+    headers["User-Agent"] = "Instagram 350.0.0.32.115 Android (33/13; 480dpi; 1080x2400; samsung; SM-G998B; p3s; exynos2100; en_US; 578652230)"
+    headers["X-IG-App-ID"] = "936619743392459"
     
     try:
         session = requests.Session()
