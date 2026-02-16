@@ -458,12 +458,12 @@ def download_instagram_image(url, target_dir="downloads", img_index=1):
     open(os.path.join(target_dir, "last_response.log"), "w").close()
 
     methods = [
-        (lambda: download_via_crawler(url, shortcode, target_dir, img_index), "Single Post Mode"),
+        (lambda: download_via_mobile_api(shortcode, target_dir, img_index), "Mobile API"),
+        (lambda: download_via_embed_json(shortcode, target_dir, img_index), "Deep Scraper"),
         (lambda: download_via_relay(url, shortcode, target_dir, img_index), "Relay Mode (v3.0)"),
         (lambda: download_via_oembed(url, shortcode, target_dir, img_index), "OEmbed"),
-        (lambda: download_via_mobile_api(shortcode, target_dir, img_index), "Mobile API"),
         (lambda: download_via_polaris_api(shortcode, target_dir, img_index), "Polaris API"),
-        (lambda: download_via_embed_json(shortcode, target_dir, img_index), "Deep Scraper"),
+        (lambda: download_via_crawler(url, shortcode, target_dir, img_index), "Single Post Mode (Meta)"),
         (lambda: download_via_embed_browser(shortcode, target_dir, img_index), "Interception"),
         (lambda: download_via_instaloader(shortcode, target_dir, img_index), "Instaloader")
     ]
