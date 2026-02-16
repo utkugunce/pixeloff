@@ -471,8 +471,8 @@ def download_instagram_image(url, target_dir="downloads", img_index=1):
     errors = []
     for func, name in methods:
         path, status = func()
-        if path: return os.path.abspath(path), status
+        if path: return os.path.abspath(path), status, errors
         if status: errors.append(f"[{name}] {status}")
         time.sleep(random.uniform(1, 2))
     
-    return None, " | ".join(errors)
+    return None, " | ".join(errors), errors

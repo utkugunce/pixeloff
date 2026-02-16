@@ -186,18 +186,28 @@ if st.button("Download & Process", type="primary"):
             st.write("🎯 **Targeting Single Post Metadata...**")
             try:
                 from downloader import download_instagram_image
-                image_path, caption = download_instagram_image(url, img_index=slide_num)
+                image_path, caption, logs = download_instagram_image(url, img_index=slide_num)
                 if not image_path:
                     error_msg = caption if caption else "Unknown error"
                     st.session_state['last_error'] = error_msg
                     status.update(label="Extraction failed. IP block is severe.", state="error", expanded=False)
                     st.error(f"Download failed: {error_msg}")
                     
-                    if st.session_state.get('debug_mode'):
-                        st.expander("Show detailed error logs").write(error_msg)
+                    if st.session_state.get('debug_mode') or logs:
+                        with st.expander("Show detailed error logs"):
+                            st.write(error_msg)
+                            if logs:
+                                st.write("---")
+                                st.write("Attempt History:")
+                                for log in logs: st.write(log)
                 else:
                     status.update(label="Found image!", state="complete", expanded=False)
                     st.success(f"✅ Downloaded using: **{caption}**")
+                    
+                    if logs:
+                        with st.expander("ℹ️ Extraction Details / History"):
+                            for log in logs: st.code(log, language="text")
+
                     st.session_state['last_image'] = image_path
                     st.session_state['last_error'] = ""
             except Exception as e:
