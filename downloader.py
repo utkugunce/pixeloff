@@ -100,7 +100,22 @@ def download_via_crawler(url, shortcode, target_dir, img_index=1):
                             return path, "Single Post (JSON-LD High-Res)"
                 except: pass
 
-            # Fallback 1: OG Image (Standard)
+            # Fallback 1: Twitter Image (Prioritize over OG for better aspect ratio)
+            tw_img = re.search(r'<meta name="twitter:image" content="(.*?)"', html)
+            if tw_img and img_index == 1:
+                img_url = tw_img.group(1).replace("&amp;", "&")
+                # Try cleaning twitter image too
+                clean_url = _clean_instagram_url(img_url)
+                ir = session.get(clean_url, headers=_HEADERS, timeout=15)
+                if ir.status_code != 200: ir = session.get(img_url, headers=_HEADERS, timeout=15)
+
+                if ir.status_code == 200:
+                    path = os.path.join(os.path.join(target_dir, shortcode), f"{shortcode}_slide{img_index}.jpg")
+                    _ensure_dir(os.path.dirname(path))
+                    with open(path, "wb") as f: f.write(ir.content)
+                    return path, "Single Post (Twitter-Meta)"
+
+            # Fallback 2: OG Image (Standard - often cropped)
             # v2.3 Fix: Clean the URL to remove cropping/resizing
             og_img = re.search(r'<meta property="og:image" content="(.*?)"', html)
             if og_img and img_index == 1:
