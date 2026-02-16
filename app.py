@@ -89,10 +89,15 @@ if st.sidebar.checkbox("🔍 System Check"):
 
 if st.sidebar.button("♻️ Clear Model Cache"):
     try:
-        shutil.rmtree(os.path.expanduser("~/.u2net"))
-        st.sidebar.success("Cache cleared!")
-    except:
-        st.sidebar.error("Could not clear cache.")
+        import shutil
+        cache_path = os.path.expanduser("~/.u2net")
+        if os.path.exists(cache_path):
+            shutil.rmtree(cache_path, ignore_errors=False)
+            st.sidebar.success("Cache cleared!")
+        else:
+            st.sidebar.info("Cache already empty.")
+    except Exception as e:
+        st.sidebar.error(f"Could not clear cache: {e}")
 
 if st.sidebar.button("🌐 Install Playwright Browsers"):
     with st.spinner("Installing browsers (this may take 2-4 minutes)..."):
