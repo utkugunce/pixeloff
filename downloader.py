@@ -73,44 +73,48 @@ def download_via_crawler(url, shortcode, target_dir, img_index=1):
         if res.status_code == 200:
             html = res.text
             
-            # v2.2 Optimization: Faster Meta Tag Discovery for single posts
-            if img_index == 1:
-                # 1. OG Image (Standard)
-                og_img = re.search(r'<meta property="og:image" content="(.*?)"', html)
-                if og_img:
-                    img_url = og_img.group(1).replace("&amp;", "&")
-                    ir = session.get(img_url, headers=_HEADERS, timeout=15)
-                    if ir.status_code == 200:
-                        path = os.path.join(os.path.join(target_dir, shortcode), f"{shortcode}_slide{img_index}.jpg")
-                        _ensure_dir(os.path.dirname(path))
-                        with open(path, "wb") as f: f.write(ir.content)
-                        return path, "Single Post (OG-Meta)"
-                
-                # 2. Twitter Image (Fallback)
-                tw_img = re.search(r'<meta name="twitter:image" content="(.*?)"', html)
-                if tw_img:
-                    img_url = tw_img.group(1).replace("&amp;", "&")
-                    ir = session.get(img_url, headers=_HEADERS, timeout=15)
-                    if ir.status_code == 200:
-                        path = os.path.join(os.path.join(target_dir, shortcode), f"{shortcode}_slide{img_index}.jpg")
-                        _ensure_dir(os.path.dirname(path))
-                        with open(path, "wb") as f: f.write(ir.content)
-                        return path, "Single Post (Twitter-Meta)"
-
-            # 3. JSON-LD (Search engine structured data)
+            # v2.3 Fix: Prioritize JSON-LD for High Quality
+            # JSON-LD often contains the "contentUrl" which is the original uploaded media
             ld_json = re.search(r'<script type="application/ld\+json">(.*?)</script>', html, re.DOTALL)
             if ld_json:
                 try:
                     data = json.loads(ld_json.group(1))
                     img_url = data.get("image")
+                    # Should be a list or string
+                    if isinstance(img_url, list): img_url = img_url[0]
+                    
                     if img_url and img_index == 1:
                         ir = session.get(img_url, headers=_HEADERS, timeout=15)
                         if ir.status_code == 200:
                             path = os.path.join(os.path.join(target_dir, shortcode), f"{shortcode}_slide{img_index}.jpg")
                             _ensure_dir(os.path.dirname(path))
                             with open(path, "wb") as f: f.write(ir.content)
-                            return path, "Single Post (JSON-LD)"
+                            return path, "Single Post (JSON-LD High-Res)"
                 except: pass
+
+            # Fallback 1: OG Image (Standard)
+            # v2.3: Skip if it looks like a thumbnail (s150x150, p320x320, etc.)
+            og_img = re.search(r'<meta property="og:image" content="(.*?)"', html)
+            if og_img and img_index == 1:
+                img_url = og_img.group(1).replace("&amp;", "&")
+                if "/s150x150/" not in img_url and "/p320x320/" not in img_url:
+                    ir = session.get(img_url, headers=_HEADERS, timeout=15)
+                    if ir.status_code == 200:
+                        path = os.path.join(os.path.join(target_dir, shortcode), f"{shortcode}_slide{img_index}.jpg")
+                        _ensure_dir(os.path.dirname(path))
+                        with open(path, "wb") as f: f.write(ir.content)
+                        return path, "Single Post (OG-Meta)"
+            
+            # Fallback 2: Twitter Image
+            tw_img = re.search(r'<meta name="twitter:image" content="(.*?)"', html)
+            if tw_img and img_index == 1:
+                img_url = tw_img.group(1).replace("&amp;", "&")
+                ir = session.get(img_url, headers=_HEADERS, timeout=15)
+                if ir.status_code == 200:
+                    path = os.path.join(os.path.join(target_dir, shortcode), f"{shortcode}_slide{img_index}.jpg")
+                    _ensure_dir(os.path.dirname(path))
+                    with open(path, "wb") as f: f.write(ir.content)
+                    return path, "Single Post (Twitter-Meta)"
 
         return None, f"Crawler: HTTP {res.status_code}"
     except Exception as e: return None, f"Crawler: {e}"
