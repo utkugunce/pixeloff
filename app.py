@@ -69,15 +69,6 @@ if not is_chromium_installed():
 
 # ... (Existing Code)
 
-# Model Selection
-mode = st.radio(
-    "⚙️ Processing Mode",
-    ["High Quality (Default)", "Human Focus"],
-    help="High Quality: Best for edges/hair.\nHuman Focus: Best for people."
-)
-
-model_name = "isnet-general-use" if mode == "High Quality (Default)" else "u2net_human_seg"
-model_info_placeholder.caption(f"🤖 **Active Model:** `{model_name}`")
 
 # 📂 Diagnostic Download (Always Visible in v1.8)
 diag_log = os.path.join("downloads", "last_response.log")
@@ -179,6 +170,7 @@ mode = st.radio(
 )
 
 model_name = "isnet-general-use" if mode == "High Quality (Default)" else "u2net_human_seg"
+model_info_placeholder.caption(f"🤖 **Active Model:** `{model_name}`")
 
 if st.button("Download & Process", type="primary"):
     if not url:
