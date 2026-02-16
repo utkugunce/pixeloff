@@ -61,12 +61,22 @@ def _shortcode_to_mediaid(shortcode):
 def _clean_instagram_url(url):
     """Refine URL to get better quality if possible."""
     # Remove resizing (/s640x640/, /p320x320/)
-    url = re.sub(r'/[sp]\d+x\d+/', '/', url)
-    # Remove cropping (/c0.134.1080.1080/)
-    url = re.sub(r'/c\d+\.\d+\.\d+\.\d+/', '/', url)
     # Remove other potential resizing params
     url = re.sub(r'/e35/', '/', url)
     url = re.sub(r'/sh0\.08/', '/', url)
+    return url
+
+def _clean_instagram_url_hard(url):
+    """v4.0 Extreme Clean: Strip EVERYTHING that looks like a resizing/processing token."""
+    # Remove query string completely
+    url = url.split("?")[0]
+    # Remove common patterns in path
+    url = re.sub(r'/[sp]\d+x\d+/', '/', url)
+    url = re.sub(r'/c\d+\.\d+\.\d+\.\d+/', '/', url)
+    url = re.sub(r'/e\d+/', '/', url)
+    url = re.sub(r'/sh\d+\.\d+/', '/', url)
+    # Re-normalize slashes
+    url = url.replace("//", "/").replace("https:/", "https://")
     return url
 
 def download_via_crawler(url, shortcode, target_dir, img_index=1):
@@ -86,22 +96,28 @@ def download_via_crawler(url, shortcode, target_dir, img_index=1):
             
             # v2.3 Fix: Prioritize JSON-LD for High Quality
             # JSON-LD often contains the "contentUrl" which is the original uploaded media
-            ld_json = re.search(r'<script type="application/ld\+json">(.*?)</script>', html, re.DOTALL)
-            if ld_json:
+            # Try multiple JSON-LD Patterns (v4.0 Resiliency)
+            json_patterns = [
+                r'<script type="application/ld\+json">(.*?)</script>',
+                r'{"@context":"https://schema\.org","@type":"ImageObject"(.*?)}'
+            ]
+            for pattern in json_patterns:
                 try:
-                    data = json.loads(ld_json.group(1))
-                    img_url = data.get("image")
-                    # Should be a list or string
-                    if isinstance(img_url, list): img_url = img_url[0]
-                    
-                    if img_url and img_index == 1:
-                        ir = session.get(img_url, headers=_HEADERS, timeout=15)
-                        if ir.status_code == 200:
+                    matches = re.findall(pattern, html, re.DOTALL)
+                    for match_content in matches:
+                        # Clean match if it's the second pattern
+                        if not match_content.startswith('{'): match_content = '{' + match_content + '}'
+                        data = json.loads(match_content)
+                        img_url = data.get("contentUrl") or data.get("image", {}).get("url")
+                        if img_url and img_index == 1:
                             path = os.path.join(os.path.join(target_dir, shortcode), f"{shortcode}_slide{img_index}.jpg")
                             _ensure_dir(os.path.dirname(path))
-                            with open(path, "wb") as f: f.write(ir.content)
-                            return path, "Single Post (JSON-LD High-Res)"
-                except: pass
+                            # Download
+                            res_img = session.get(img_url, headers=_HEADERS, timeout=15)
+                            if res_img.status_code == 200:
+                                with open(path, "wb") as f: f.write(res_img.content)
+                                return path, "Single Post (JSON-LD High-Res)"
+                except: continue
 
             # Fallback 1: Twitter Image (Prioritize over OG for better aspect ratio)
             tw_img = re.search(r'<meta name="twitter:image" content="(.*?)"', html)
@@ -370,64 +386,95 @@ def download_via_relay(url, shortcode, target_dir, img_index=1):
             )
             page = context.new_page()
             
-            # 1. Try SnapInsta
+            # 1. Try SaveVid (Formerly SaveIG) - v4.0 Primary
+            try:
+                page.goto("https://savevid.net/en/instagram-video-downloader", timeout=15000)
+                time.sleep(random.uniform(2, 4)) # Stealth
+                page.fill('#s_input', url)
+                time.sleep(random.uniform(1, 2))
+                page.click('button.btn-default')
+                
+                # Wait for results with extra time for Cloudflare/Loading
+                page.wait_for_selector('a.download-items__btn', timeout=15000)
+                download_link = page.get_attribute('a.download-items__btn', 'href')
+                
+                if download_link:
+                    clean_link = _clean_instagram_url(download_link)
+                    ir = requests.get(clean_link, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
+                    if ir.status_code != 200: ir = requests.get(download_link, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
+                    if ir.status_code == 200:
+                        path = os.path.join(os.path.join(target_dir, shortcode), f"{shortcode}_slide{img_index}_savevid.jpg")
+                        _ensure_dir(os.path.dirname(path))
+                        with open(path, "wb") as f: f.write(ir.content)
+                        browser.close()
+                        return path, "Relay Mode (SaveVid)"
+            except: pass
+
+            # 2. Try SnapInsta
             try:
                 page.goto("https://snapinsta.app/", timeout=15000)
+                time.sleep(random.uniform(1, 3))
                 page.fill('input[name="url"]', url)
-                # Click logic refined
                 page.click('.btn-get')
                 
-                # Wait for result
                 try: page.wait_for_selector('.download-bottom a', timeout=10000)
                 except: pass
-
                 download_link = page.get_attribute('.download-bottom a', 'href')
                 
                 if download_link:
-                    # Clean the URL to remove potential resizing
                     clean_link = _clean_instagram_url(download_link)
-                    # Try clean first, then raw
                     ir = requests.get(clean_link, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
-                    if ir.status_code != 200:
-                        ir = requests.get(download_link, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
-                        
+                    if ir.status_code != 200: ir = requests.get(download_link, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
                     if ir.status_code == 200:
-                        path = os.path.join(os.path.join(target_dir, shortcode), f"{shortcode}_slide{img_index}_relay.jpg")
+                        path = os.path.join(os.path.join(target_dir, shortcode), f"{shortcode}_slide{img_index}_snapinsta.jpg")
                         _ensure_dir(os.path.dirname(path))
                         with open(path, "wb") as f: f.write(ir.content)
                         browser.close()
                         return path, "Relay Mode (SnapInsta)"
-            except Exception as e:
-                pass # Try next relay
+            except: pass
 
-            # 2. Try Indown.io (Fallback)
+            # 3. Try Indown.io
             try:
                 page.goto("https://indown.io/", timeout=15000)
+                time.sleep(random.uniform(1, 3))
                 page.fill('input#link', url)
                 page.click('#get')
                 
                 try: page.wait_for_selector('#result', timeout=15000)
                 except: pass
-
-                # Indown often puts the link in a button with class .btn-download
-                # We need to find the correct one for image
                 download_link = page.get_attribute('a.btn-download', 'href') 
                 
                 if download_link:
-                     # Clean the URL to remove potential resizing
                      clean_link = _clean_instagram_url(download_link)
                      ir = requests.get(clean_link, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
-                     if ir.status_code != 200:
-                        ir = requests.get(download_link, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
-
+                     if ir.status_code != 200: ir = requests.get(download_link, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
                      if ir.status_code == 200:
-                        path = os.path.join(os.path.join(target_dir, shortcode), f"{shortcode}_slide{img_index}_relay.jpg")
+                        path = os.path.join(os.path.join(target_dir, shortcode), f"{shortcode}_slide{img_index}_indown.jpg")
                         _ensure_dir(os.path.dirname(path))
                         with open(path, "wb") as f: f.write(ir.content)
                         browser.close()
                         return path, "Relay Mode (Indown)"
-            except Exception as e:
-                pass
+            except: pass
+            
+            # v4.0 Extra: Try FastDL.app
+            try:
+                page.goto("https://fastdl.app/en", timeout=15000)
+                time.sleep(random.uniform(1, 2))
+                page.fill('#s_input', url)
+                page.click('button.btn-premium')
+                page.wait_for_selector('a.download-items__btn', timeout=10000)
+                download_link = page.get_attribute('a.download-items__btn', 'href')
+                if download_link:
+                     clean_link = _clean_instagram_url(download_link)
+                     ir = requests.get(clean_link, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
+                     if ir.status_code != 200: ir = requests.get(download_link, headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
+                     if ir.status_code == 200:
+                        path = os.path.join(os.path.join(target_dir, shortcode), f"{shortcode}_slide{img_index}_fastdl.jpg")
+                        _ensure_dir(os.path.dirname(path))
+                        with open(path, "wb") as f: f.write(ir.content)
+                        browser.close()
+                        return path, "Relay Mode (FastDL)"
+            except: pass
 
             browser.close()
             return None, "Relay: All services failed"
