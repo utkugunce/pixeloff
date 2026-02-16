@@ -64,6 +64,9 @@ def _clean_instagram_url(url):
     url = re.sub(r'/[sp]\d+x\d+/', '/', url)
     # Remove cropping (/c0.134.1080.1080/)
     url = re.sub(r'/c\d+\.\d+\.\d+\.\d+/', '/', url)
+    # Remove other potential resizing params
+    url = re.sub(r'/e35/', '/', url)
+    url = re.sub(r'/sh0\.08/', '/', url)
     return url
 
 def download_via_crawler(url, shortcode, target_dir, img_index=1):

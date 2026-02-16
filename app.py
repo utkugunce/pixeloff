@@ -197,6 +197,7 @@ if st.button("Download & Process", type="primary"):
                         st.expander("Show detailed error logs").write(error_msg)
                 else:
                     status.update(label="Found image!", state="complete", expanded=False)
+                    st.success(f"✅ Downloaded using: **{caption}**")
                     st.session_state['last_image'] = image_path
                     st.session_state['last_error'] = ""
             except Exception as e:
