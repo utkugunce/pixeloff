@@ -1,4 +1,5 @@
 import streamlit as st
+print("--- APP STARTING ---")
 import os
 import sys
 import subprocess
@@ -50,15 +51,22 @@ try:
     st.sidebar.success("🛡️ **Relay Protection Active**\n(Bypassing IP Bans via Proxy)")
     model_info_placeholder = st.sidebar.empty()
 
-    # Chromium Check (v1.9)
-    def is_chromium_installed():
-        try:
-            import subprocess
-            import sys
-            cmd = [sys.executable, "-m", "playwright", "install", "--dry-run"]
-            res = subprocess.run(cmd, capture_output=True, text=True)
-            return "chromium" in res.stdout.lower()
-        except: return False
+    
+# Chromium Check (v1.9)
+@st.cache_resource
+def is_chromium_installed():
+    print("Checking for Chromium...")
+    try:
+        import subprocess
+        import sys
+        cmd = [sys.executable, "-m", "playwright", "install", "--dry-run"]
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        is_installed = "chromium" in res.stdout.lower()
+        print(f"Chromium check result: {is_installed}")
+        return is_installed
+    except Exception as e:
+        print(f"Chromium check failed: {e}")
+        return False
 
     if not is_chromium_installed():
         st.sidebar.error("⚠️ Chromium Browser Missing")
