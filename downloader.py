@@ -38,15 +38,34 @@ def fetch_rendered_html(url, target_dir, timeout=30000):
     
     try:
         with sync_playwright() as p:
-            # Launch options for standard environment
+            # Launch options for stealth (v5.1)
             browser = p.chromium.launch(
                 headless=True,
-                args=['--no-sandbox', '--disable-setuid-sandbox']
+                args=[
+                    '--no-sandbox', 
+                    '--disable-setuid-sandbox',
+                    '--disable-blink-features=AutomationControlled', # 🕵️ Hide automation flag
+                    '--disable-infobars',
+                    '--window-size=1920,1080'
+                ]
             )
+            
+            # Context with real-user fingerprint
             context = browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                viewport={'width': 1920, 'height': 1080},
+                locale='en-US',
+                timezone_id='America/New_York'
             )
+            
             page = context.new_page()
+            
+            # 🕵️ Script Injection to hide "navigator.webdriver"
+            page.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined
+                });
+            """)
             
             try:
                 page.goto(url, wait_until="domcontentloaded", timeout=timeout)
