@@ -34,6 +34,7 @@ def fetch_rendered_html(url, target_dir, timeout=30000):
     from playwright.sync_api import sync_playwright
     
     html_content = ""
+    page_title = "Unknown"
     error_log = ""
     
     try:
@@ -61,11 +62,7 @@ def fetch_rendered_html(url, target_dir, timeout=30000):
             page = context.new_page()
             
             # 🕵️ Script Injection to hide "navigator.webdriver"
-            page.add_init_script("""
-                Object.defineProperty(navigator, 'webdriver', {
-                    get: () => undefined
-                });
-            """)
+            page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
             
             try:
                 page.goto(url, wait_until="domcontentloaded", timeout=timeout)
@@ -75,6 +72,9 @@ def fetch_rendered_html(url, target_dir, timeout=30000):
                 # Scroll down to trigger lazy loading
                 page.evaluate("window.scrollTo(0, document.body.scrollHeight/2)")
                 time.sleep(1)
+                
+                # Capture Info
+                page_title = page.title()
                 
                 # 📸 DEBUG: Take Screenshot
                 debug_path = os.path.join(target_dir, "debug_view.png")
@@ -89,58 +89,47 @@ def fetch_rendered_html(url, target_dir, timeout=30000):
     except Exception as e:
         error_log = f"Playwright Init Error: {e}"
 
-    return html_content, error_log
+    return html_content, page_title, error_log
 
 # --- RELAY METHODS ---
 
 def download_via_picuki(shortcode, target_dir, img_index=1):
-    """Method 1: Picuki (High Reliability)"""
+    """Method 1: Picuki (Direct)"""
     media_id = _shortcode_to_mediaid(shortcode)
     url = f"https://www.picuki.com/media/{media_id}"
     
-    html, error = fetch_rendered_html(url, target_dir)
+    html, title, error = fetch_rendered_html(url, target_dir)
     if not html: return None, f"Picuki Browser Error: {error}"
     
     soup = BeautifulSoup(html, 'html.parser')
     slides = []
 
-    # 1. Carousel (Owl Carousel)
+    # 1. Carousel
     # Picuki uses OwlCarousel. We look for images inside owl-item not referenced as cloned
     carousel_items = soup.select('.owl-item:not(.cloned) img')
     if carousel_items:
         # Owl carousel sometimes duplicates items, we de-dupe by URL
         slides = list(dict.fromkeys([img.get('src') for img in carousel_items]))
     
-    # 2. Single Video (Poster)
+    # 2. Single
     if not slides:
-        video = soup.select_one('video')
-        if video and video.get('poster'): slides = [video.get('poster')]
-
-    # 3. Single Photo (Try multiple selectors)
-    if not slides:
-        for selector in ['.single-photo img', '.post-image', '.photo-wrapper img']:
-            img = soup.select_one(selector)
-            if img: 
-                slides = [img.get('src')]
+        for selector in ['.single-photo img', '.post-image', '.photo-wrapper img', 'video[poster]']:
+            elem = soup.select_one(selector)
+            if elem: 
+                slides = [elem.get('src') or elem.get('poster')]
                 break
-
-    # 4. Content fallback (Broadest)
-    if not slides:
-        # check for just ANY image in the content area that looks large
-        imgs = soup.select('.content-box img')
-        if imgs: slides = [imgs[0].get('src')]
 
     if slides and len(slides) >= img_index:
         img_url = slides[img_index-1]
         return _download_file(img_url, target_dir, shortcode, img_index, "Picuki")
 
-    return None, "Picuki: Content not found in rendered page"
+    return None, f"Picuki: Content not found in rendered page. Title: '{title}'"
 
 def download_via_imginn(shortcode, target_dir, img_index=1):
-    """Method 2: Imginn/Imgann"""
+    """Method 2: Imginn (Direct)"""
     url = f"https://imginn.com/p/{shortcode}/"
     
-    html, error = fetch_rendered_html(url, target_dir)
+    html, title, error = fetch_rendered_html(url, target_dir)
     if not html: return None, f"Imginn Browser Error: {error}"
     
     soup = BeautifulSoup(html, 'html.parser')
@@ -161,7 +150,62 @@ def download_via_imginn(shortcode, target_dir, img_index=1):
         if img_url.startswith("//"): img_url = "https:" + img_url
         return _download_file(img_url, target_dir, shortcode, img_index, "Imginn")
         
-    return None, "Imginn: Content not found"
+    return None, f"Imginn: Content not found. Title: '{title}'"
+
+def download_via_snapinsta(original_url, shortcode, target_dir, img_index=1):
+    """Method 3: SnapInsta (Form Submission)"""
+    # This requires interactive browser automation, not just fetching HTML
+    from playwright.sync_api import sync_playwright
+    
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=True,
+                args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled']
+            )
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            )
+            page = context.new_page()
+            page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
+            
+            try:
+                page.goto("https://snapinsta.app/", timeout=20000)
+                time.sleep(2)
+                
+                # Fill Form
+                page.fill('input[name="url"]', original_url)
+                time.sleep(1)
+                page.click('.btn-get')
+                
+                # Wait for result
+                try: page.wait_for_selector('.download-bottom', timeout=15000)
+                except: pass
+                
+                # Screenshot debug
+                page.screenshot(path=os.path.join(target_dir, "debug_view_snap.png"))
+                
+                # Extract
+                html = page.content()
+                soup = BeautifulSoup(html, 'html.parser')
+                
+                # SnapInsta lists items. For carousel, it's multiple .download-item
+                items = soup.select('.download-item')
+                slides = []
+                
+                for item in items:
+                    a_tag = item.select_one('.download-bottom a')
+                    if a_tag: slides.append(a_tag.get('href'))
+                
+                if slides and len(slides) >= img_index:
+                    return _download_file(slides[img_index-1], target_dir, shortcode, img_index, "SnapInsta")
+                    
+                return None, f"SnapInsta: No results. Title: '{page.title()}'"
+
+            finally:
+                browser.close()
+    except Exception as e:
+        return None, f"SnapInsta Error: {e}"
 
 def _download_file(url, target_dir, shortcode, img_index, source_name):
     import requests
