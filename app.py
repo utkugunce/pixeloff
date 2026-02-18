@@ -258,13 +258,19 @@ try:
     # Universal Debug Section
     if url:
         st.divider()
+        
+        # New Debug View
+        debug_shot = os.path.join("downloads", "debug_view.png")
+        if os.path.exists(debug_shot):
+             with st.expander("📸 Visual Debug (Browser View)", expanded=False):
+                st.image(debug_shot, caption=f"What the browser saw at {time.ctime(os.path.getmtime(debug_shot))}")
+                st.info("If this looks like a CAPTCHA or 'Blocked' page, the relay is blocking our server IP.")
+
         if st.session_state.get('visual_debug'):
-            debug_shot = os.path.join("downloads", "debug_last_browser.png")
-            if os.path.exists(debug_shot):
-                with st.expander("📸 Visual Debug (Browser Screenshot)", expanded=True):
-                    st.image(debug_shot, caption="What the browser saw during extraction")
-            elif not st.session_state.get('last_image'):
-                st.info("Waiting for browser to capture screenshot...")
+            legacy_shot = os.path.join("downloads", "debug_last_browser.png")
+            if os.path.exists(legacy_shot):
+                with st.expander("📸 Visual Debug (Legacy)", expanded=True):
+                    st.image(legacy_shot)
 
         # 429 Guidance with Countdown (v2.1)
         last_err = st.session_state.get('last_error', '')

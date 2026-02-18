@@ -29,7 +29,7 @@ def _shortcode_to_mediaid(shortcode):
     return media_id
 
 # --- CORE BROWSER ENGINE ---
-def fetch_rendered_html(url, timeout=30000):
+def fetch_rendered_html(url, target_dir, timeout=30000):
     """Uses Playwright to fetch fully rendered HTML (JS executed)."""
     from playwright.sync_api import sync_playwright
     
@@ -51,11 +51,15 @@ def fetch_rendered_html(url, timeout=30000):
             try:
                 page.goto(url, wait_until="domcontentloaded", timeout=timeout)
                 # Extra wait for dynamic carousels
-                time.sleep(3) 
+                time.sleep(4) 
                 
                 # Scroll down to trigger lazy loading
                 page.evaluate("window.scrollTo(0, document.body.scrollHeight/2)")
                 time.sleep(1)
+                
+                # 📸 DEBUG: Take Screenshot
+                debug_path = os.path.join(target_dir, "debug_view.png")
+                page.screenshot(path=debug_path)
                 
                 html_content = page.content()
             except Exception as e:
@@ -75,7 +79,7 @@ def download_via_picuki(shortcode, target_dir, img_index=1):
     media_id = _shortcode_to_mediaid(shortcode)
     url = f"https://www.picuki.com/media/{media_id}"
     
-    html, error = fetch_rendered_html(url)
+    html, error = fetch_rendered_html(url, target_dir)
     if not html: return None, f"Picuki Browser Error: {error}"
     
     soup = BeautifulSoup(html, 'html.parser')
@@ -93,14 +97,17 @@ def download_via_picuki(shortcode, target_dir, img_index=1):
         video = soup.select_one('video')
         if video and video.get('poster'): slides = [video.get('poster')]
 
-    # 3. Single Photo
+    # 3. Single Photo (Try multiple selectors)
     if not slides:
-        img = soup.select_one('.single-photo img')
-        if img: slides = [img.get('src')]
+        for selector in ['.single-photo img', '.post-image', '.photo-wrapper img']:
+            img = soup.select_one(selector)
+            if img: 
+                slides = [img.get('src')]
+                break
 
-    # 4. Content fallback
+    # 4. Content fallback (Broadest)
     if not slides:
-        # check for just ANY image in the content area
+        # check for just ANY image in the content area that looks large
         imgs = soup.select('.content-box img')
         if imgs: slides = [imgs[0].get('src')]
 
@@ -114,7 +121,7 @@ def download_via_imginn(shortcode, target_dir, img_index=1):
     """Method 2: Imginn/Imgann"""
     url = f"https://imginn.com/p/{shortcode}/"
     
-    html, error = fetch_rendered_html(url)
+    html, error = fetch_rendered_html(url, target_dir)
     if not html: return None, f"Imginn Browser Error: {error}"
     
     soup = BeautifulSoup(html, 'html.parser')
@@ -125,9 +132,9 @@ def download_via_imginn(shortcode, target_dir, img_index=1):
     if downloads:
         slides = [a.get('href') for a in downloads if a.get('href')]
     
-    # Fallback to images
+    # Fallback to images (Broad)
     if not slides:
-        imgs = soup.select('.img-fluid')
+        imgs = soup.select('img.img-fluid')
         slides = [img.get('src') for img in imgs if img.get('src')]
 
     if slides and len(slides) >= img_index:
