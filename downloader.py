@@ -104,8 +104,49 @@ def fetch_rendered_html(url, target_dir, timeout=30000):
 
 # --- RELAY METHODS ---
 
+# --- RELAY METHODS ---
+
+def download_via_sssinstagram(original_url, shortcode, target_dir, img_index=1):
+    """Method 1: SSSInstagram (Form)"""
+    from playwright.sync_api import sync_playwright
+    
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True, args=['--no-sandbox', '--disable-blink-features=AutomationControlled'])
+            page = browser.new_page()
+            
+            try:
+                page.goto("https://sssinstagram.com/en", timeout=30000)
+                page.wait_for_load_state("domcontentloaded")
+                
+                # Close cookies/popups if any (Press Escape)
+                page.keyboard.press("Escape")
+                
+                page.fill('input#main_page_text', original_url)
+                page.click('button#submit')
+                
+                # Wait for result
+                try: page.wait_for_selector('.download-wrapper, .result-box', timeout=20000)
+                except: return None, f"SSSInstagram: Timeout. Title: '{page.title()}'"
+                
+                html = page.content()
+                soup = BeautifulSoup(html, 'html.parser')
+                
+                slides = []
+                for a in soup.select('.download-wrapper a, a.download-button'):
+                    href = a.get('href')
+                    if href: slides.append(href)
+                
+                if slides and len(slides) >= img_index:
+                    return _download_file(slides[img_index-1], target_dir, shortcode, img_index, "SSSInstagram")
+                    
+                return None, "SSSInstagram: No slides"
+            finally:
+                browser.close()
+    except Exception as e: return None, f"SSSInstagram Error: {e}"
+
 def download_via_fastdl(original_url, shortcode, target_dir, img_index=1):
-    """Method 1: FastDL (Generic Selectors)"""
+    """Method 2: FastDL (Debug Mode)"""
     from playwright.sync_api import sync_playwright
     
     try:
@@ -117,81 +158,38 @@ def download_via_fastdl(original_url, shortcode, target_dir, img_index=1):
                 page.goto("https://fastdl.app/en", timeout=30000)
                 page.wait_for_load_state("networkidle")
                 
-                # Generic Form Fill
                 page.fill('input[type="text"]', original_url)
-                page.keyboard.press("Enter") # Safer than clicking buttons
+                page.keyboard.press("Enter")
                 
-                # Wait for results
-                try: 
-                    # Look for any download link that appears
-                    page.wait_for_selector('a[download], a[href*="download"]', timeout=20000)
-                except:
-                    page.screenshot(path=os.path.join(target_dir, "debug_fastdl_fail.png"))
-                    return None, f"FastDL: Timeout. Title: '{page.title()}'"
+                # Wait for ANY link to appear in the output area
+                try: page.wait_for_selector('div.output-list, a[download]', timeout=20000)
+                except: return None, f"FastDL: Timeout. Title: '{page.title()}'"
                 
                 html = page.content()
                 soup = BeautifulSoup(html, 'html.parser')
                 
-                # Generic extraction of download links
+                # Debugging Logic
+                found_links = [a.get('href') for a in soup.select('a[href]')]
+                
                 slides = []
-                for a in soup.select('a[href*="googlevideo"], a[href*="cdninstagram"], a[download]'):
+                for a in soup.select('a[href*="googlevideo"], a[href*="cdninstagram"], a[download], a.button--filled'):
                     href = a.get('href')
-                    if href and "fastdl" not in href: # Avoid internal links
+                    if href and "fastdl" not in href and "javascript" not in href:
                         slides.append(href)
                 
-                # De-dupe
-                slides = list(dict.fromkeys(slides))
-
                 if slides and len(slides) >= img_index:
                     return _download_file(slides[img_index-1], target_dir, shortcode, img_index, "FastDL")
-                    
-                return None, f"FastDL: No content. Title: '{page.title()}'"
+                
+                # Return debug info
+                debug_info = f"Found {len(found_links)} links, {len(slides)} matched. First 3 found: {found_links[:3]}"
+                return None, f"FastDL: No content. {debug_info}"
 
             finally:
                 browser.close()
     except Exception as e: return None, f"FastDL Error: {e}"
 
-def download_via_publer(original_url, shortcode, target_dir, img_index=1):
-    """Method 2: Publer (Strong API)"""
-    from playwright.sync_api import sync_playwright
-    
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True, args=['--no-sandbox', '--disable-blink-features=AutomationControlled'])
-            page = browser.new_page()
-            
-            try:
-                page.goto("https://publer.io/tools/instagram-downloader", timeout=30000)
-                page.wait_for_load_state("networkidle")
-                
-                # Accept cookies if any
-                try: page.click('button:has-text("Accept")', timeout=2000)
-                except: pass
-
-                page.fill('input[type="url"]', original_url)
-                page.click('button[type="submit"]')
-                
-                try: page.wait_for_selector('div[class*="download"], a[class*="download"]', timeout=25000)
-                except: return None, "Publer: Timeout"
-                
-                html = page.content()
-                soup = BeautifulSoup(html, 'html.parser')
-                
-                slides = []
-                # Publer usually gives direct download buttons
-                for a in soup.select('a[href*="instagram"], a[href*="fbcdn"]'):
-                    slides.append(a.get('href'))
-
-                if slides and len(slides) >= img_index:
-                    return _download_file(slides[img_index-1], target_dir, shortcode, img_index, "Publer")
-                
-                return None, "Publer: No content"
-            finally:
-                browser.close()
-    except Exception as e: return None, f"Publer Error: {e}"
-
 def download_via_indown(shortcode, target_dir, img_index, original_url):
-    """Method 3: Indown (Generic)"""
+    """Method 3: Indown (Relaxed)"""
     from playwright.sync_api import sync_playwright
     try:
         with sync_playwright() as p:
@@ -199,10 +197,12 @@ def download_via_indown(shortcode, target_dir, img_index, original_url):
             page = browser.new_page()
             try:
                 page.goto("https://indown.io/", timeout=30000)
-                page.wait_for_load_state("domcontentloaded")
+                # Close potential popup
+                time.sleep(1)
+                page.keyboard.press("Escape")
                 
-                page.fill('input#link', original_url) # Keep specific for Indown, it's usually stable
-                page.click('button[type="submit"]')   # Changed to generic type
+                page.fill('input#link', original_url)
+                page.click('button[type="submit"]')
                 
                 try: page.wait_for_selector('#result', timeout=20000)
                 except: return None, "Indown: Timeout"
@@ -211,12 +211,15 @@ def download_via_indown(shortcode, target_dir, img_index, original_url):
                 soup = BeautifulSoup(html, 'html.parser')
                 
                 slides = []
-                for a in soup.select('div#result a.btn-primary'):
-                    slides.append(a.get('href'))
+                # Relaxed: Any link inside #result
+                for a in soup.select('div#result a[href]'):
+                    href = a.get('href')
+                    if href and "javascript" not in href and len(href) > 20:
+                        slides.append(href)
                 
                 if slides and len(slides) >= img_index:
                     return _download_file(slides[img_index-1], target_dir, shortcode, img_index, "Indown")
-                return None, "Indown: No slides found"
+                return None, f"Indown: No slides. Found {len(slides)} potential links."
             finally:
                 browser.close()
     except Exception as e: return None, f"Indown Error: {e}"
@@ -326,9 +329,9 @@ def download_instagram_image(url, target_dir="downloads", img_index=1):
     _clean_dir(os.path.join(target_dir, shortcode))
     
     methods = [
-        (lambda: download_via_publer(url, shortcode, target_dir, img_index), "Publer (Safe)"),
-        (lambda: download_via_fastdl(url, shortcode, target_dir, img_index), "FastDL (Generic)"),
-        (lambda: download_via_indown(shortcode, target_dir, img_index, url), "Indown (Generic)"),
+        (lambda: download_via_sssinstagram(url, shortcode, target_dir, img_index), "SSSInstagram (Form)"),
+        (lambda: download_via_fastdl(url, shortcode, target_dir, img_index), "FastDL (Debug)"),
+        (lambda: download_via_indown(shortcode, target_dir, img_index, url), "Indown (Relaxed)"),
     ]
     
     errors = []
