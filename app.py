@@ -124,7 +124,36 @@ def is_chromium_installed():
             except Exception as e:
                 st.sidebar.error(f"Error: {e}")
 
+
     st.sidebar.divider()
+
+    if st.sidebar.button("🚨 Run Full System Test"):
+        with st.status("Running Diagnostics...", expanded=True) as status:
+            st.write("Initializing diagnostic suite...")
+            try:
+                from diagnostic_tool import SystemDiagnostics
+                diag = SystemDiagnostics()
+                
+                st.write("Checking System Resources...")
+                results = diag.run_all()
+                
+                status.update(label="Diagnostics Complete", state="complete", expanded=False)
+                
+                st.subheader("📊 Diagnostic Report")
+                
+                # Check for critical failures
+                browser_status = results.get("Browser Check", {}).get("Launch Test", "")
+                if "❌" in browser_status:
+                    st.error(f"CRITICAL: Browser Launch Failed! \n{browser_status}")
+                else:
+                    st.success("Browser System looks healthy.")
+                
+                with st.expander("View Full Report", expanded=True):
+                    st.json(results)
+                    
+            except Exception as e:
+                status.update(label="Diagnostics Failed", state="error")
+                st.error(f"Failed to run diagnostics: {e}")
 
     if st.sidebar.checkbox("🐞 Enable Debug Logs"):
         st.session_state['debug_mode'] = True
