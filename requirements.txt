@@ -5,4 +5,5 @@ requests
 streamlit
 beautifulsoup4
 playwright
+psutil
 numpy<2
