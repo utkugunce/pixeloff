@@ -71,57 +71,97 @@ def fetch_rendered_html(url, timeout=30000):
 # --- RELAY METHODS ---
 
 def download_via_picuki(shortcode, target_dir, img_index=1):
-                if ir.status_code == 200:
-                    path = os.path.join(os.path.join(target_dir, shortcode), f"{shortcode}_slide{img_index}_picuki.jpg")
-                    _ensure_dir(os.path.dirname(path))
-                    with open(path, "wb") as f: f.write(ir.content)
-                    return path, "Relay Mode (Picuki)"
-        return None, f"Picuki: HTTP {res.status_code} or Content Missing"
-    except Exception as e: return None, f"Picuki: {e}"
+    """Method 1: Picuki (High Reliability)"""
+    media_id = _shortcode_to_mediaid(shortcode)
+    url = f"https://www.picuki.com/media/{media_id}"
+    
+    html, error = fetch_rendered_html(url)
+    if not html: return None, f"Picuki Browser Error: {error}"
+    
+    soup = BeautifulSoup(html, 'html.parser')
+    slides = []
+
+    # 1. Carousel (Owl Carousel)
+    # Picuki uses OwlCarousel. We look for images inside owl-item not referenced as cloned
+    carousel_items = soup.select('.owl-item:not(.cloned) img')
+    if carousel_items:
+        # Owl carousel sometimes duplicates items, we de-dupe by URL
+        slides = list(dict.fromkeys([img.get('src') for img in carousel_items]))
+    
+    # 2. Single Video (Poster)
+    if not slides:
+        video = soup.select_one('video')
+        if video and video.get('poster'): slides = [video.get('poster')]
+
+    # 3. Single Photo
+    if not slides:
+        img = soup.select_one('.single-photo img')
+        if img: slides = [img.get('src')]
+
+    # 4. Content fallback
+    if not slides:
+        # check for just ANY image in the content area
+        imgs = soup.select('.content-box img')
+        if imgs: slides = [imgs[0].get('src')]
+
+    if slides and len(slides) >= img_index:
+        img_url = slides[img_index-1]
+        return _download_file(img_url, target_dir, shortcode, img_index, "Picuki")
+
+    return None, "Picuki: Content not found in rendered page"
 
 def download_via_imginn(shortcode, target_dir, img_index=1):
-    """Method 8: Imginn (Public Viewer Relay)"""
+    """Method 2: Imginn/Imgann"""
+    url = f"https://imginn.com/p/{shortcode}/"
+    
+    html, error = fetch_rendered_html(url)
+    if not html: return None, f"Imginn Browser Error: {error}"
+    
+    soup = BeautifulSoup(html, 'html.parser')
+    slides = []
+    
+    # Imginn typically lists download buttons for all items
+    downloads = soup.select('.downloads a.btn-primary')
+    if downloads:
+        slides = [a.get('href') for a in downloads if a.get('href')]
+    
+    # Fallback to images
+    if not slides:
+        imgs = soup.select('.img-fluid')
+        slides = [img.get('src') for img in imgs if img.get('src')]
+
+    if slides and len(slides) >= img_index:
+        img_url = slides[img_index-1]
+        if img_url.startswith("//"): img_url = "https:" + img_url
+        return _download_file(img_url, target_dir, shortcode, img_index, "Imginn")
+        
+    return None, "Imginn: Content not found"
+
+def _download_file(url, target_dir, shortcode, img_index, source_name):
+    import requests
     try:
-        url = f"https://imginn.com/p/{shortcode}/"
+        # Clean URL
+        clean_url = _clean_instagram_url(url)
+        clean_url = clean_url.replace("https://", "").replace("//", "")
+        clean_url = f"https://{clean_url}"
+
+        # Standard headers
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
         
-        session = requests.Session()
-        headers = _HEADERS.copy()
-        headers["User-Agent"] = random.choice(_USER_AGENTS)
-        # Imginn sometimes requires cookies/specific headers, keeping it simple first
-        
-        res = session.get(url, headers=headers, timeout=15)
-        _log_diagnostic(target_dir, f"Imginn {shortcode}", res.text)
-        
+        path = os.path.join(os.path.join(target_dir, shortcode), f"{shortcode}_slide{img_index}.jpg")
+        _ensure_dir(os.path.dirname(path))
+
+        res = requests.get(clean_url, headers=headers, timeout=20)
         if res.status_code == 200:
-            soup = BeautifulSoup(res.text, 'html.parser')
-            
-            # Imginn structure varies, but usually .downloads a for download links
-            downloads = soup.select('.downloads a.btn-primary')
-            # If standard post
-            if not downloads:
-                # Check for other structures
-                pass
+            with open(path, "wb") as f: f.write(res.content)
+            return path, f"Relay ({source_name})"
+        else:
+            return None, f"HTTP {res.status_code} on Clean download"
+    except Exception as e:
+        return None, f"Download Error: {e}"
 
-            slides = [a.get('href') for a in downloads if a.get('href')]
-            
-            # Imginn puts video cover and video file, we need to filter for images if possible
-            # But for PixelOff we generally want the image representation.
-            # Imginn usually lists all media. 
-            # Note: Imginn might mix video and image buttons.
-            
-            if slides and len(slides) >= img_index:
-                img_url = slides[img_index-1]
-                if img_url.startswith("//"): img_url = "https:" + img_url
-                
-                ir = session.get(img_url, headers=headers, timeout=15)
-                if ir.status_code == 200:
-                    path = os.path.join(os.path.join(target_dir, shortcode), f"{shortcode}_slide{img_index}_imginn.jpg")
-                    _ensure_dir(os.path.dirname(path))
-                    with open(path, "wb") as f: f.write(ir.content)
-                    return path, "Relay Mode (Imginn)"
-
-        return None, f"Imginn: HTTP {res.status_code} or Content Missing"
-    except Exception as e: return None, f"Imginn: {e}"
 
 def download_instagram_image(url, target_dir="downloads", img_index=1):
     m = re.search(r'instagram\.com/(?:[^/]+/)?(?:p|reel)/([^/?#]+)', url)
@@ -130,19 +170,9 @@ def download_instagram_image(url, target_dir="downloads", img_index=1):
     _ensure_dir(target_dir)
     _clean_dir(os.path.join(target_dir, shortcode))
     
-    open(os.path.join(target_dir, "last_response.log"), "w").close()
-
     methods = [
-        (lambda: download_via_picuki(shortcode, target_dir, img_index), "Picuki Relay (**NEW**)"),
-        (lambda: download_via_imginn(shortcode, target_dir, img_index), "Imginn Relay (**NEW**)"),
-        (lambda: download_via_mobile_api(shortcode, target_dir, img_index), "Mobile API"),
-        (lambda: download_via_embed_json(shortcode, target_dir, img_index), "Deep Scraper"),
-        (lambda: download_via_relay(url, shortcode, target_dir, img_index), "Relay Mode (v3.0)"),
-        (lambda: download_via_oembed(url, shortcode, target_dir, img_index), "OEmbed"),
-        (lambda: download_via_polaris_api(shortcode, target_dir, img_index), "Polaris API"),
-        (lambda: download_via_crawler(url, shortcode, target_dir, img_index), "Single Post Mode (Meta)"),
-        (lambda: download_via_embed_browser(shortcode, target_dir, img_index), "Interception"),
-        (lambda: download_via_instaloader(shortcode, target_dir, img_index), "Instaloader")
+        (lambda: download_via_picuki(shortcode, target_dir, img_index), "Picuki Browser"),
+        (lambda: download_via_imginn(shortcode, target_dir, img_index), "Imginn Browser"),
     ]
     
     errors = []
@@ -150,6 +180,5 @@ def download_instagram_image(url, target_dir="downloads", img_index=1):
         path, status = func()
         if path: return os.path.abspath(path), status, errors
         if status: errors.append(f"[{name}] {status}")
-        time.sleep(random.uniform(1, 2))
     
     return None, " | ".join(errors), errors
