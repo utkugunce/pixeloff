@@ -53,32 +53,38 @@ try:
 
     
     # Chromium Check (v1.9)
+        # Chromium Check & Auto-Install (v2.0)
     @st.cache_resource
-    def is_chromium_installed():
-        print("Checking for Chromium...")
+    def ensure_chromium_installed():
+        print("Checking/Installing Chromium...")
         try:
+            from playwright.sync_api import sync_playwright
+            
+            # 1. Try to launch (Fastest check for actual usability)
+            try:
+                with sync_playwright() as p:
+                    p.chromium.launch(headless=True, args=['--no-sandbox', '--disable-setuid-sandbox'])
+                print("✅ Chromium is already installed and working.")
+                return True
+            except Exception as e:
+                print(f"⚠️ Browser launch failed, attempting install... ({e})")
+            
+            # 2. Install if launch failed
             import subprocess
             import sys
-            cmd = [sys.executable, "-m", "playwright", "install", "--dry-run"]
-            res = subprocess.run(cmd, capture_output=True, text=True)
-            is_installed = "chromium" in res.stdout.lower()
-            print(f"Chromium check result: {is_installed}")
-            return is_installed
+            print("Installing Chromium...")
+            cmd = [sys.executable, "-m", "playwright", "install", "chromium"]
+            subprocess.run(cmd, check=True)
+            print("✅ Chromium installation command completed.")
+            return True
+            
         except Exception as e:
-            print(f"Chromium check failed: {e}")
+            print(f"❌ Critical: Chromium install/check failed: {e}")
             return False
 
-    if not is_chromium_installed():
-        st.sidebar.error("⚠️ Chromium Browser Missing")
-        if st.sidebar.button("🔧 Fix Browser (Install Chromium)"):
-            with st.spinner("Installing... (2-4 mins)"):
-                try:
-                    import sys
-                    subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"])
-                    st.sidebar.success("Installed! Refresh (F5) and retry.")
-                except Exception as e: st.sidebar.error(f"Failed: {e}")
-
-    # ... (Existing Code)
+    if not ensure_chromium_installed():
+        st.error("🚨 Critical Dependency Missing: Chromium Browser could not be installed. Check logs.")
+        st.stop()
 
 
     # 📂 Diagnostic Download (Always Visible in v1.8)
