@@ -102,33 +102,29 @@ def fetch_rendered_html(url, target_dir, timeout=30000):
 
 # --- RELAY METHODS ---
 
+# --- RELAY METHODS ---
+
 def download_via_fastdl(original_url, shortcode, target_dir, img_index=1):
-    """Method 1: FastDL (Form Submission) - Strong"""
+    """Method 1: FastDL (Generic Selectors)"""
     from playwright.sync_api import sync_playwright
     
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=True,
-                args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled']
-            )
-            context = browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
-            )
-            page = context.new_page()
+            browser = p.chromium.launch(headless=True, args=['--no-sandbox', '--disable-blink-features=AutomationControlled'])
+            page = browser.new_page()
             
             try:
                 page.goto("https://fastdl.app/en", timeout=30000)
-                time.sleep(2)
+                page.wait_for_load_state("networkidle")
                 
-                # Fill Form (FastDL usually has #search-form-input or similar)
-                # Selectors change, trying generic input first
-                page.fill('input#search-form-input', original_url)
-                page.click('button.search-form__button')
+                # Generic Form Fill
+                page.fill('input[type="text"]', original_url)
+                page.keyboard.press("Enter") # Safer than clicking buttons
                 
+                # Wait for results
                 try: 
-                    # Wait for download buttons
-                    page.wait_for_selector('.output-list__item', timeout=20000)
+                    # Look for any download link that appears
+                    page.wait_for_selector('a[download], a[href*="download"]', timeout=20000)
                 except:
                     page.screenshot(path=os.path.join(target_dir, "debug_fastdl_fail.png"))
                     return None, f"FastDL: Timeout. Title: '{page.title()}'"
@@ -136,69 +132,84 @@ def download_via_fastdl(original_url, shortcode, target_dir, img_index=1):
                 html = page.content()
                 soup = BeautifulSoup(html, 'html.parser')
                 
-                # FastDL items
-                items = soup.select('.output-list__item')
+                # Generic extraction of download links
                 slides = []
+                for a in soup.select('a[href*="googlevideo"], a[href*="cdninstagram"], a[download]'):
+                    href = a.get('href')
+                    if href and "fastdl" not in href: # Avoid internal links
+                        slides.append(href)
                 
-                for item in items:
-                    a = item.select_one('a.button--filled')
-                    if a: slides.append(a.get('href'))
-                
+                # De-dupe
+                slides = list(dict.fromkeys(slides))
+
                 if slides and len(slides) >= img_index:
                     return _download_file(slides[img_index-1], target_dir, shortcode, img_index, "FastDL")
                     
-                return None, f"FastDL: No content found. Title: '{page.title()}'"
+                return None, f"FastDL: No content. Title: '{page.title()}'"
 
             finally:
                 browser.close()
-    except Exception as e:
-        return None, f"FastDL Error: {e}"
+    except Exception as e: return None, f"FastDL Error: {e}"
 
-def download_via_picuki(shortcode, target_dir, img_index=1):
-    """Method 2: Picuki (Search Mode)"""
-    # Direct ID often fails. Search is safer.
-    # Actually Picuki search searches profiles and tags. It doesn't find posts by shortcode easily.
-    # Let's stick to Picuki but debug the ID. 
-    # If 404, the ID is wrong.
-    # Let's try `Indown.io` instead of Picuki for this slot. It's form based.
+def download_via_publer(original_url, shortcode, target_dir, img_index=1):
+    """Method 2: Publer (Strong API)"""
+    from playwright.sync_api import sync_playwright
     
-    # This function is now a placeholder that calls Indown.
-    # The original_url is needed for Indown, but not directly available here.
-    # We will pass the original_url from the main `download_instagram_image` function.
-    # For now, this function will be removed and Indown will be called directly.
-    # The user's instruction implies `download_via_picuki` should call `download_via_indown`.
-    # However, the `methods` list in `download_instagram_image` will call `download_via_indown` directly.
-    # So, this `download_via_picuki` function will be replaced by `download_via_indown` in the methods list.
-    # The user's provided code for `download_via_picuki` is a comment block and then a call to `download_via_indown`.
-    # I will interpret this as replacing the *slot* of Picuki with Indown, and Indown will be a new function.
-    # The user's instruction for `download_via_picuki` is to rewrite it to use search form, but then it says "Let's try `Indown.io` instead of Picuki for this slot."
-    # And then the provided code for `download_via_picuki` is `return download_via_indown(...)`.
-    # This means the `download_via_picuki` function itself will be removed, and `download_via_indown` will take its place in the `methods` list.
-    # I will remove the old `download_via_picuki` and add `download_via_indown` as a new function.
-    pass # This function will be replaced by download_via_indown in the methods list.
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True, args=['--no-sandbox', '--disable-blink-features=AutomationControlled'])
+            page = browser.new_page()
+            
+            try:
+                page.goto("https://publer.io/tools/instagram-downloader", timeout=30000)
+                page.wait_for_load_state("networkidle")
+                
+                # Accept cookies if any
+                try: page.click('button:has-text("Accept")', timeout=2000)
+                except: pass
+
+                page.fill('input[type="url"]', original_url)
+                page.click('button[type="submit"]')
+                
+                try: page.wait_for_selector('div[class*="download"], a[class*="download"]', timeout=25000)
+                except: return None, "Publer: Timeout"
+                
+                html = page.content()
+                soup = BeautifulSoup(html, 'html.parser')
+                
+                slides = []
+                # Publer usually gives direct download buttons
+                for a in soup.select('a[href*="instagram"], a[href*="fbcdn"]'):
+                    slides.append(a.get('href'))
+
+                if slides and len(slides) >= img_index:
+                    return _download_file(slides[img_index-1], target_dir, shortcode, img_index, "Publer")
+                
+                return None, "Publer: No content"
+            finally:
+                browser.close()
+    except Exception as e: return None, f"Publer Error: {e}"
 
 def download_via_indown(shortcode, target_dir, img_index, original_url):
-    """Method 2: Indown (Form)"""
+    """Method 3: Indown (Generic)"""
     from playwright.sync_api import sync_playwright
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=True,
-                args=['--no-sandbox', '--disable-setuid-sandbox']
-            )
+            browser = p.chromium.launch(headless=True, args=['--no-sandbox'])
             page = browser.new_page()
             try:
                 page.goto("https://indown.io/", timeout=30000)
-                page.fill('input#link', original_url)
-                page.click('button#get')
+                page.wait_for_load_state("domcontentloaded")
                 
-                try: page.wait_for_selector('#result', timeout=15000)
+                page.fill('input#link', original_url) # Keep specific for Indown, it's usually stable
+                page.click('button[type="submit"]')   # Changed to generic type
+                
+                try: page.wait_for_selector('#result', timeout=20000)
                 except: return None, "Indown: Timeout"
                 
                 html = page.content()
                 soup = BeautifulSoup(html, 'html.parser')
                 
-                # Indown results
                 slides = []
                 for a in soup.select('div#result a.btn-primary'):
                     slides.append(a.get('href'))
@@ -315,9 +326,9 @@ def download_instagram_image(url, target_dir="downloads", img_index=1):
     _clean_dir(os.path.join(target_dir, shortcode))
     
     methods = [
-        (lambda: download_via_fastdl(url, shortcode, target_dir, img_index), "FastDL (Form)"),
-        (lambda: download_via_indown(shortcode, target_dir, img_index, url), "Indown (Form)"),
-        (lambda: download_via_savefree(url, shortcode, target_dir, img_index), "SaveFree (Form)"),
+        (lambda: download_via_publer(url, shortcode, target_dir, img_index), "Publer (Safe)"),
+        (lambda: download_via_fastdl(url, shortcode, target_dir, img_index), "FastDL (Generic)"),
+        (lambda: download_via_indown(shortcode, target_dir, img_index, url), "Indown (Generic)"),
     ]
     
     errors = []
