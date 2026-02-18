@@ -47,8 +47,8 @@ try:
 
     # Sidebar Title
     st.sidebar.title("🛠️ Troubleshooting")
-    st.sidebar.info("**Version:** v3.0 \"Kesin Çözüm: Relay\"")
-    st.sidebar.success("🛡️ **Relay Protection Active**\n(Bypassing IP Bans via Proxy)")
+    st.sidebar.info("**Version:** v4.0 \"Public Viewer Defeat\"")
+    st.sidebar.success("🛡️ **Public Viewer Relay Active**\n(Bypassing 429 Errors via Picuki/Imginn)")
     model_info_placeholder = st.sidebar.empty()
 
     
