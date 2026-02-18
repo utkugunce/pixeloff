@@ -225,9 +225,12 @@ try:
             with st.status("Starting Virtual Browser...", expanded=True) as status:
                 st.write("🌍 **Spinning up Headless Chrome...**")
                 try:
+                    import importlib
+                    import downloader
+                    importlib.reload(downloader)
                     from downloader import download_instagram_image
                     
-                    st.write("🕵️‍♂️ **Browsing Public Viewers (Picuki/Imginn)...**")
+                    st.write("🕵️‍♂️ **Browsing Public Viewers (SnapInsta/SaveFree/Picuki)...**")
                     image_path, caption, logs = download_instagram_image(url, img_index=slide_num)
                     
                     if not image_path:

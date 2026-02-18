@@ -298,6 +298,8 @@ def download_instagram_image(url, target_dir="downloads", img_index=1):
     _clean_dir(os.path.join(target_dir, shortcode))
     
     methods = [
+        (lambda: download_via_snapinsta(url, shortcode, target_dir, img_index), "SnapInsta (Form)"),
+        (lambda: download_via_savefree(url, shortcode, target_dir, img_index), "SaveFree (Form)"),
         (lambda: download_via_picuki(shortcode, target_dir, img_index), "Picuki Browser"),
         (lambda: download_via_imginn(shortcode, target_dir, img_index), "Imginn Browser"),
     ]
