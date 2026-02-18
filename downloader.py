@@ -102,8 +102,8 @@ def fetch_rendered_html(url, target_dir, timeout=30000):
 
 # --- RELAY METHODS ---
 
-def download_via_snapinsta(original_url, shortcode, target_dir, img_index=1):
-    """Method 1: SnapInsta (Form Submission) - Primary"""
+def download_via_fastdl(original_url, shortcode, target_dir, img_index=1):
+    """Method 1: FastDL (Form Submission) - Strong"""
     from playwright.sync_api import sync_playwright
     
     try:
@@ -116,57 +116,102 @@ def download_via_snapinsta(original_url, shortcode, target_dir, img_index=1):
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
             )
             page = context.new_page()
-            page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
             
             try:
-                # 1. Go to Home (Less likely to be blocked than deep links)
-                page.goto("https://snapinsta.app/", timeout=30000)
+                page.goto("https://fastdl.app/en", timeout=30000)
                 time.sleep(2)
                 
-                # 2. Fill Form
-                page.fill('input[name="url"]', original_url)
-                time.sleep(0.5)
-                page.click('.btn-get')
+                # Fill Form (FastDL usually has #search-form-input or similar)
+                # Selectors change, trying generic input first
+                page.fill('input#search-form-input', original_url)
+                page.click('button.search-form__button')
                 
-                # 3. Wait for Results (Pass CF)
                 try: 
-                    # Wait for either the download section OR a CF challenge
-                    page.wait_for_selector('.download-bottom', timeout=15000)
+                    # Wait for download buttons
+                    page.wait_for_selector('.output-list__item', timeout=20000)
                 except:
-                    # Capture debug if wait fails
-                    page.screenshot(path=os.path.join(target_dir, "debug_snap_fail.png"))
-                    return None, f"SnapInsta: Timestamp out. Title: '{page.title()}'"
+                    page.screenshot(path=os.path.join(target_dir, "debug_fastdl_fail.png"))
+                    return None, f"FastDL: Timeout. Title: '{page.title()}'"
                 
-                # 4. Extract
                 html = page.content()
                 soup = BeautifulSoup(html, 'html.parser')
                 
-                items = soup.select('.download-item')
-                # If single item, it might not have .download-item class sometimes?
-                if not items: items = [soup] # Try generic
-                
+                # FastDL items
+                items = soup.select('.output-list__item')
                 slides = []
+                
                 for item in items:
-                    a = item.select_one('.download-bottom a')
+                    a = item.select_one('a.button--filled')
                     if a: slides.append(a.get('href'))
                 
-                if not slides:
-                    # Fallback selector
-                    a = soup.select_one('.download-top a')
-                    if a: slides.append(a.get('href'))
-
                 if slides and len(slides) >= img_index:
-                    return _download_file(slides[img_index-1], target_dir, shortcode, img_index, "SnapInsta")
+                    return _download_file(slides[img_index-1], target_dir, shortcode, img_index, "FastDL")
                     
-                return None, f"SnapInsta: No results found. Title: '{page.title()}'"
+                return None, f"FastDL: No content found. Title: '{page.title()}'"
 
             finally:
                 browser.close()
     except Exception as e:
-        return None, f"SnapInsta Error: {e}"
+        return None, f"FastDL Error: {e}"
+
+def download_via_picuki(shortcode, target_dir, img_index=1):
+    """Method 2: Picuki (Search Mode)"""
+    # Direct ID often fails. Search is safer.
+    # Actually Picuki search searches profiles and tags. It doesn't find posts by shortcode easily.
+    # Let's stick to Picuki but debug the ID. 
+    # If 404, the ID is wrong.
+    # Let's try `Indown.io` instead of Picuki for this slot. It's form based.
+    
+    # This function is now a placeholder that calls Indown.
+    # The original_url is needed for Indown, but not directly available here.
+    # We will pass the original_url from the main `download_instagram_image` function.
+    # For now, this function will be removed and Indown will be called directly.
+    # The user's instruction implies `download_via_picuki` should call `download_via_indown`.
+    # However, the `methods` list in `download_instagram_image` will call `download_via_indown` directly.
+    # So, this `download_via_picuki` function will be replaced by `download_via_indown` in the methods list.
+    # The user's provided code for `download_via_picuki` is a comment block and then a call to `download_via_indown`.
+    # I will interpret this as replacing the *slot* of Picuki with Indown, and Indown will be a new function.
+    # The user's instruction for `download_via_picuki` is to rewrite it to use search form, but then it says "Let's try `Indown.io` instead of Picuki for this slot."
+    # And then the provided code for `download_via_picuki` is `return download_via_indown(...)`.
+    # This means the `download_via_picuki` function itself will be removed, and `download_via_indown` will take its place in the `methods` list.
+    # I will remove the old `download_via_picuki` and add `download_via_indown` as a new function.
+    pass # This function will be replaced by download_via_indown in the methods list.
+
+def download_via_indown(shortcode, target_dir, img_index, original_url):
+    """Method 2: Indown (Form)"""
+    from playwright.sync_api import sync_playwright
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=True,
+                args=['--no-sandbox', '--disable-setuid-sandbox']
+            )
+            page = browser.new_page()
+            try:
+                page.goto("https://indown.io/", timeout=30000)
+                page.fill('input#link', original_url)
+                page.click('button#get')
+                
+                try: page.wait_for_selector('#result', timeout=15000)
+                except: return None, "Indown: Timeout"
+                
+                html = page.content()
+                soup = BeautifulSoup(html, 'html.parser')
+                
+                # Indown results
+                slides = []
+                for a in soup.select('div#result a.btn-primary'):
+                    slides.append(a.get('href'))
+                
+                if slides and len(slides) >= img_index:
+                    return _download_file(slides[img_index-1], target_dir, shortcode, img_index, "Indown")
+                return None, "Indown: No slides found"
+            finally:
+                browser.close()
+    except Exception as e: return None, f"Indown Error: {e}"
 
 def download_via_savefree(original_url, shortcode, target_dir, img_index=1):
-    """Method 2: SaveFree (Backup Form)"""
+    """Method 3: SaveFree (Backup Form)"""
     from playwright.sync_api import sync_playwright
     
     try:
@@ -189,6 +234,7 @@ def download_via_savefree(original_url, shortcode, target_dir, img_index=1):
                 
                 try: page.wait_for_selector('.download-items', timeout=15000)
                 except: 
+                    # Try clicking again?
                     page.screenshot(path=os.path.join(target_dir, "debug_savefree_fail.png"))
                     return None, "SaveFree: Timeout"
                 
@@ -196,7 +242,6 @@ def download_via_savefree(original_url, shortcode, target_dir, img_index=1):
                 soup = BeautifulSoup(html, 'html.parser')
                 
                 slides = []
-                # SaveFree uses .download-items .download-item
                 items = soup.select('.download-item')
                 for item in items:
                     a = item.select_one('a.download-btn')
@@ -210,34 +255,6 @@ def download_via_savefree(original_url, shortcode, target_dir, img_index=1):
                 browser.close()
     except Exception as e:
         return None, f"SaveFree Error: {e}"
-
-def download_via_picuki(shortcode, target_dir, img_index=1):
-    """Method 3: Picuki (Direct)"""
-    media_id = _shortcode_to_mediaid(shortcode)
-    url = f"https://www.picuki.com/media/{media_id}"
-    
-    html, title, error = fetch_rendered_html(url, target_dir)
-    if not html: return None, f"Picuki Browser Error: {error}"
-    
-    soup = BeautifulSoup(html, 'html.parser')
-    slides = []
-
-    carousel_items = soup.select('.owl-item:not(.cloned) img')
-    if carousel_items:
-        slides = list(dict.fromkeys([img.get('src') for img in carousel_items]))
-    
-    if not slides:
-        for selector in ['.single-photo img', '.post-image', '.photo-wrapper img', 'video[poster]']:
-            elem = soup.select_one(selector)
-            if elem: 
-                slides = [elem.get('src') or elem.get('poster')]
-                break
-
-    if slides and len(slides) >= img_index:
-        img_url = slides[img_index-1]
-        return _download_file(img_url, target_dir, shortcode, img_index, "Picuki")
-
-    return None, f"Picuki: Content not found in rendered page. Title: '{title}'"
 
 def download_via_imginn(shortcode, target_dir, img_index=1):
     """Method 4: Imginn (Direct)"""
@@ -298,10 +315,9 @@ def download_instagram_image(url, target_dir="downloads", img_index=1):
     _clean_dir(os.path.join(target_dir, shortcode))
     
     methods = [
-        (lambda: download_via_snapinsta(url, shortcode, target_dir, img_index), "SnapInsta (Form)"),
+        (lambda: download_via_fastdl(url, shortcode, target_dir, img_index), "FastDL (Form)"),
+        (lambda: download_via_indown(shortcode, target_dir, img_index, url), "Indown (Form)"),
         (lambda: download_via_savefree(url, shortcode, target_dir, img_index), "SaveFree (Form)"),
-        (lambda: download_via_picuki(shortcode, target_dir, img_index), "Picuki Browser"),
-        (lambda: download_via_imginn(shortcode, target_dir, img_index), "Imginn Browser"),
     ]
     
     errors = []
